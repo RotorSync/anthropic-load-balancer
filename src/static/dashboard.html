@@ -228,22 +228,22 @@
                 // Subscriptions
                 const subsEl = document.getElementById('subscriptions');
                 subsEl.innerHTML = live.subscriptions.map(sub => {
-                    const pct = (sub.active_connections / sub.max_concurrent) * 100;
-                    const color = sub.in_cooldown ? 'bg-red-500' : 
-                                  pct > 80 ? 'bg-amber-500' : 'bg-green-500';
+                    const name = String(sub.name || '');
+                    const active = Number(sub.active_connections) || 0;
+                    const max = Number(sub.max_concurrent) || 5;
+                    const requests = Number(sub.total_requests) || 0;
+                    const inCooldown = Boolean(sub.in_cooldown);
+                    const pct = (active / max) * 100;
+                    const color = inCooldown ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-green-500';
                     return `
                         <div class="flex items-center gap-3">
-                            <div class="w-16 font-mono text-sm">${sub.name}</div>
+                            <div class="w-16 font-mono text-sm">${name}</div>
                             <div class="flex-1 bg-dark-border rounded-full h-2 overflow-hidden">
                                 <div class="${color} h-full transition-all" style="width: ${pct}%"></div>
                             </div>
-                            <div class="text-xs text-dark-muted w-12 text-right">
-                                ${sub.active_connections}/${sub.max_concurrent}
-                            </div>
-                            <div class="text-xs text-dark-muted w-16 text-right">
-                                ${formatNumber(sub.total_requests)} req
-                            </div>
-                            ${sub.in_cooldown ? '<span class="text-xs text-red-500">⚠</span>' : ''}
+                            <div class="text-xs text-dark-muted w-12 text-right">${active}/${max}</div>
+                            <div class="text-xs text-dark-muted w-16 text-right">${formatNumber(requests)} req</div>
+                            ${inCooldown ? '<span class="text-xs text-red-500">⚠</span>' : ''}
                         </div>
                     `;
                 }).join('');
@@ -253,20 +253,27 @@
                 if (data.clients.length === 0) {
                     clientsEl.innerHTML = `<tr><td colspan="6" class="text-dark-muted text-center py-6">No clients yet</td></tr>`;
                 } else {
-                    clientsEl.innerHTML = data.clients.map(c => `
-                        <tr class="border-t border-dark-border">
-                            <td class="py-2 font-mono">${c.client_id}</td>
-                            <td class="py-2">
-                                <span class="px-1.5 py-0.5 rounded text-xs" style="background: ${subColors[c.last_subscription] || '#666'}20; color: ${subColors[c.last_subscription] || '#666'}">
-                                    ${c.last_subscription || '—'}
-                                </span>
-                            </td>
-                            <td class="py-2">${formatNumber(c.total_requests)}</td>
-                            <td class="py-2">${formatNumber(c.tokens_today || c.total_tokens || 0)}</td>
-                            <td class="py-2">${formatNumber(c.tokens_week || c.total_tokens || 0)}</td>
-                            <td class="py-2 text-dark-muted">${formatTime(c.last_seen)}</td>
-                        </tr>
-                    `).join('');
+                    clientsEl.innerHTML = data.clients.map(c => {
+                        const clientId = String(c.client_id || 'unknown');
+                        const lastSub = String(c.last_subscription || '—');
+                        const requests = Number(c.total_requests) || 0;
+                        const tokensDay = Number(c.tokens_today || c.total_tokens) || 0;
+                        const tokensWeek = Number(c.tokens_week || c.total_tokens) || 0;
+                        const lastSeen = c.last_seen || '';
+                        const subColor = subColors[lastSub] || '#666';
+                        return `
+                            <tr class="border-t border-dark-border">
+                                <td class="py-2 font-mono">${clientId}</td>
+                                <td class="py-2">
+                                    <span class="px-1.5 py-0.5 rounded text-xs" style="background: ${subColor}20; color: ${subColor}">${lastSub}</span>
+                                </td>
+                                <td class="py-2">${formatNumber(requests)}</td>
+                                <td class="py-2">${formatNumber(tokensDay)}</td>
+                                <td class="py-2">${formatNumber(tokensWeek)}</td>
+                                <td class="py-2 text-dark-muted">${formatTime(lastSeen)}</td>
+                            </tr>
+                        `;
+                    }).join('');
                 }
 
                 // Stats
