@@ -98,6 +98,30 @@
                     </div>
                 </div>
 
+                <!-- Account Limits -->
+                <div class="bg-dark-card rounded-lg border border-dark-border">
+                    <div class="p-3 border-b border-dark-border flex items-center justify-between">
+                        <h2 class="font-semibold text-sm">Account Limits</h2>
+                        <span id="limits-updated" class="text-dark-muted text-xs"></span>
+                    </div>
+                    <div class="p-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <div class="text-xs text-dark-muted mb-2">5-Hour Utilization</div>
+                                <div id="limits-5h" class="space-y-2">
+                                    <div class="text-dark-muted text-xs">Loading...</div>
+                                </div>
+                            </div>
+                            <div>
+                                <div class="text-xs text-dark-muted mb-2">7-Day Utilization</div>
+                                <div id="limits-7d" class="space-y-2">
+                                    <div class="text-dark-muted text-xs">Loading...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Clients -->
                 <div class="bg-dark-card rounded-lg border border-dark-border">
                     <div class="p-3 border-b border-dark-border">
@@ -399,13 +423,59 @@
             }
         }
 
+        async function fetchLimits() {
+            try {
+                const res = await fetch('http://192.168.68.181:5050/api/usage');
+                const data = await res.json();
+                
+                const accounts = data.accounts || [];
+                const limits5h = document.getElementById('limits-5h');
+                const limits7d = document.getElementById('limits-7d');
+                
+                function renderBar(account, period) {
+                    const util = Number(account[period]?.utilization) || 0;
+                    const resets = account[period]?.resets_at;
+                    const resetTime = resets ? new Date(resets) : null;
+                    const now = new Date();
+                    const hoursLeft = resetTime ? Math.max(0, (resetTime - now) / 3600000) : 0;
+                    const resetStr = hoursLeft > 24 ? `${Math.floor(hoursLeft / 24)}d` : `${Math.floor(hoursLeft)}h`;
+                    
+                    const color = util >= 80 ? 'bg-red-500' : util >= 50 ? 'bg-amber-500' : 'bg-green-500';
+                    const name = account.id || 'unknown';
+                    
+                    return `
+                        <div class="flex items-center gap-2">
+                            <div class="w-14 text-xs font-mono">${name}</div>
+                            <div class="flex-1 bg-dark-border rounded-full h-2 overflow-hidden">
+                                <div class="${color} h-full" style="width: ${util}%"></div>
+                            </div>
+                            <div class="text-xs text-dark-muted w-10 text-right">${util}%</div>
+                            <div class="text-xs text-dark-muted w-8 text-right">${resetStr}</div>
+                        </div>
+                    `;
+                }
+                
+                limits5h.innerHTML = accounts.map(a => renderBar(a, 'five_hour')).join('');
+                limits7d.innerHTML = accounts.map(a => renderBar(a, 'seven_day')).join('');
+                
+                document.getElementById('limits-updated').textContent = 
+                    data.fetched_at ? new Date(data.fetched_at).toLocaleTimeString() : '';
+            } catch (e) {
+                console.error('Failed to fetch limits:', e);
+                document.getElementById('limits-5h').innerHTML = '<div class="text-red-400 text-xs">Failed to load</div>';
+                document.getElementById('limits-7d').innerHTML = '<div class="text-red-400 text-xs">Failed to load</div>';
+            }
+        }
+
         // Initial load
         fetchClients();
         fetchUsage();
+        fetchLimits();
 
         // Auto-refresh
         setInterval(fetchClients, 5000);
         setInterval(fetchUsage, 30000);
+        setInterval(fetchLimits, 60000);
     </script>
 </body>
 </html>
