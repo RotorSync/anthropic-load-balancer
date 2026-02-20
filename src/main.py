@@ -404,9 +404,46 @@ async def root():
 # Proxy Endpoints
 # ============================================================================
 
+def check_external_access(request: Request) -> tuple[bool, str]:
+    """
+    Check if request is allowed based on external access config.
+    
+    Returns:
+        (allowed, error_message)
+    """
+    # Local network always allowed
+    if is_local_network(request):
+        return True, ""
+    
+    # Check if external access is enabled
+    if config is None or not config.external.enabled:
+        return False, "External access not enabled"
+    
+    # Check API token
+    token = request.headers.get("x-api-token", "")
+    if not token or token != config.external.api_token:
+        return False, "Invalid or missing API token"
+    
+    # Check client whitelist (if configured)
+    if config.external.allowed_clients:
+        client_id = request.headers.get("x-client-id", "")
+        if client_id not in config.external.allowed_clients:
+            return False, f"Client '{client_id}' not in allowed list"
+    
+    return True, ""
+
+
 @app.api_route("/v1/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
 async def proxy_v1(request: Request, path: str):
     """Proxy all /v1/* requests to Anthropic API."""
+    # Check external access
+    allowed, error = check_external_access(request)
+    if not allowed:
+        return JSONResponse(
+            {"error": {"type": "unauthorized", "message": error}},
+            status_code=401,
+        )
+    
     if proxy is None:
         return JSONResponse(
             {"error": {"type": "not_ready", "message": "Service not initialized"}},

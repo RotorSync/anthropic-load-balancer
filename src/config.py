@@ -22,6 +22,13 @@ class ServerConfig(BaseModel):
     port: int = 8080
 
 
+class ExternalAccessConfig(BaseModel):
+    """Configuration for external (tunnel) access."""
+    enabled: bool = False
+    api_token: str = ""
+    allowed_clients: list[str] = []
+
+
 class RateLimitConfig(BaseModel):
     """Rate limiting configuration."""
     cooldown_seconds: int = Field(default=60, ge=1)
@@ -40,6 +47,7 @@ class Config(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)
     rate_limit: RateLimitConfig = Field(default_factory=RateLimitConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    external: ExternalAccessConfig = Field(default_factory=ExternalAccessConfig)
 
 
 def load_config(path: Optional[str] = None) -> Config:
