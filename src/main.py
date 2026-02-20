@@ -61,13 +61,23 @@ def check_config_permissions(config_path: Path):
         pass
 
 
-def is_localhost(request: Request) -> bool:
-    """Check if request is from localhost."""
+def is_local_network(request: Request) -> bool:
+    """Check if request is from localhost or local network (192.168.68.0/24)."""
     client = request.client
     if client is None:
         return False
     host = client.host
-    return host in ("127.0.0.1", "::1", "localhost")
+    # Allow localhost
+    if host in ("127.0.0.1", "::1", "localhost"):
+        return True
+    # Allow local network subnet
+    if host.startswith("192.168.68."):
+        return True
+    return False
+
+
+# Alias for backward compatibility
+is_localhost = is_local_network
 
 
 # Global instances
