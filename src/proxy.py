@@ -3,7 +3,8 @@ HTTP proxy logic for forwarding requests to Anthropic API.
 """
 import json
 import logging
-from typing import AsyncIterator, Optional
+import secrets
+from typing import AsyncIterator
 
 import httpx
 from fastapi import Request, Response
@@ -18,15 +19,10 @@ ANTHROPIC_BASE_URL = "https://api.anthropic.com"
 # Max retries for 429 on non-streaming requests
 MAX_429_RETRIES = 2
 
-# Headers to pass through (not modify)
-PASSTHROUGH_HEADERS = {
-    "anthropic-version",
-    "content-type",
-    "accept",
-    "anthropic-beta",
-}
+# Max request body size (10MB - Anthropic's limit is ~1MB for most requests)
+MAX_REQUEST_BODY_SIZE = 10 * 1024 * 1024
 
-# Headers we add/modify
+# Headers we add/modify (skip from incoming request)
 SKIP_REQUEST_HEADERS = {
     "host",
     "authorization",
@@ -42,6 +38,11 @@ SKIP_RESPONSE_HEADERS = {
     "transfer-encoding",
     "connection",
 }
+
+
+def _generate_request_id() -> str:
+    """Generate a short request ID for tracing."""
+    return secrets.token_hex(4)
 
 
 class AnthropicProxy:
@@ -84,13 +85,17 @@ class AnthropicProxy:
                 headers[key] = value
         
         # Set auth for the selected subscription
-        # OAuth keys use Bearer token, regular keys use x-api-key
-        if subscription.api_key.startswith("sk-ant-"):
+        # OAuth tokens (sk-ant-oat*) use Bearer, regular API keys use x-api-key
+        if subscription.api_key.startswith("sk-ant-oat"):
+            # OAuth token - use Bearer auth
+            headers["authorization"] = f"Bearer {subscription.api_key}"
+            headers.pop("x-api-key", None)
+        elif subscription.api_key.startswith("sk-ant-"):
             # Regular API key
             headers["x-api-key"] = subscription.api_key
             headers.pop("authorization", None)
         else:
-            # OAuth token - use Bearer auth
+            # Unknown format - try Bearer (safer default for OAuth)
             headers["authorization"] = f"Bearer {subscription.api_key}"
             headers.pop("x-api-key", None)
         
@@ -116,120 +121,20 @@ class AnthropicProxy:
         self,
         response: httpx.Response,
         subscription: SubscriptionState,
+        request_id: str,
     ) -> AsyncIterator[bytes]:
         """Stream response chunks to the client."""
         try:
             async for chunk in response.aiter_bytes():
                 yield chunk
+        except httpx.StreamClosed:
+            # Client disconnected - this is normal
+            logger.debug(f"[{request_id}] Stream closed by client")
         except Exception as e:
-            logger.error(f"Error streaming response from {subscription.name}: {e}")
+            logger.error(f"[{request_id}] Error streaming from {subscription.name}: {e}")
             raise
         finally:
             await response.aclose()
-    
-    async def _try_request(
-        self,
-        method: str,
-        url: str,
-        body: bytes,
-        is_streaming: bool,
-        excluded_subscriptions: Optional[set[str]] = None,
-    ) -> tuple[Optional[SubscriptionState], Optional[Response]]:
-        """
-        Attempt a single request to an available subscription.
-        
-        Returns:
-            (subscription, response) tuple. If no subscription available, both are None.
-        """
-        excluded = excluded_subscriptions or set()
-        
-        # Select a subscription (excluding any that already 429'd)
-        subscription = await self.tracker.select_subscription()
-        
-        # Skip if we already tried this one
-        while subscription and subscription.name in excluded:
-            # Mark temporarily at capacity to get next one
-            subscription = await self.tracker.select_subscription()
-        
-        if subscription is None:
-            return None, None
-        
-        headers = {}
-        # We need to rebuild headers for each attempt with the right API key
-        headers["x-api-key"] = subscription.api_key
-        
-        logger.info(
-            f"Routing request to {subscription.name}: {method} {url} "
-            f"(streaming: {is_streaming})"
-        )
-        
-        async with self.tracker.acquire_connection(subscription):
-            try:
-                if is_streaming:
-                    response = await self.client.send(
-                        self.client.build_request(
-                            method=method,
-                            url=url,
-                            headers=headers,
-                            content=body,
-                        ),
-                        stream=True,
-                    )
-                    
-                    if response.status_code == 429:
-                        await response.aclose()
-                        await self.tracker.record_429(subscription)
-                        return subscription, Response(
-                            content='{"error": {"type": "rate_limit", "message": "Rate limited. Please retry."}}',
-                            status_code=429,
-                            media_type="application/json",
-                        )
-                    
-                    return subscription, StreamingResponse(
-                        self._stream_response(response, subscription),
-                        status_code=response.status_code,
-                        headers=self._filter_response_headers(response.headers),
-                        media_type=response.headers.get("content-type", "text/event-stream"),
-                    )
-                else:
-                    response = await self.client.request(
-                        method=method,
-                        url=url,
-                        headers=headers,
-                        content=body,
-                    )
-                    
-                    if response.status_code == 429:
-                        await self.tracker.record_429(subscription)
-                        # Return the subscription so caller knows to retry
-                        return subscription, None  # None response = should retry
-                    
-                    if response.status_code >= 500:
-                        await self.tracker.record_error(subscription)
-                    
-                    return subscription, Response(
-                        content=response.content,
-                        status_code=response.status_code,
-                        headers=self._filter_response_headers(response.headers),
-                        media_type=response.headers.get("content-type", "application/json"),
-                    )
-                    
-            except httpx.TimeoutException as e:
-                logger.error(f"Timeout proxying to {subscription.name}: {e}")
-                await self.tracker.record_error(subscription)
-                return subscription, Response(
-                    content='{"error": {"type": "timeout", "message": "Request timed out."}}',
-                    status_code=504,
-                    media_type="application/json",
-                )
-            except httpx.RequestError as e:
-                logger.error(f"Error proxying to {subscription.name}: {e}")
-                await self.tracker.record_error(subscription)
-                return subscription, Response(
-                    content='{"error": {"type": "proxy_error", "message": "Failed to connect to upstream."}}',
-                    status_code=502,
-                    media_type="application/json",
-                )
     
     async def proxy_request(self, request: Request, path: str) -> Response:
         """
@@ -242,13 +147,38 @@ class AnthropicProxy:
         Returns:
             Response to send to the client.
         """
+        request_id = _generate_request_id()
+        
         # Build the upstream URL
         url = f"{ANTHROPIC_BASE_URL}{path}"
         if request.url.query:
             url = f"{url}?{request.url.query}"
         
+        # Check content-length before reading body
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_REQUEST_BODY_SIZE:
+                    logger.warning(f"[{request_id}] Request body too large: {content_length} bytes")
+                    return Response(
+                        content='{"error": {"type": "request_too_large", "message": "Request body exceeds maximum size."}}',
+                        status_code=413,
+                        media_type="application/json",
+                    )
+            except ValueError:
+                pass  # Invalid content-length header, let it through
+        
         # Get request body
         body = await request.body()
+        
+        # Double-check actual body size
+        if len(body) > MAX_REQUEST_BODY_SIZE:
+            logger.warning(f"[{request_id}] Request body too large: {len(body)} bytes")
+            return Response(
+                content='{"error": {"type": "request_too_large", "message": "Request body exceeds maximum size."}}',
+                status_code=413,
+                media_type="application/json",
+            )
         
         # Check if streaming
         is_streaming = self._is_streaming_request(body)
@@ -257,7 +187,7 @@ class AnthropicProxy:
         if is_streaming:
             subscription = await self.tracker.select_subscription()
             if subscription is None:
-                logger.error("No subscriptions available for request")
+                logger.warning(f"[{request_id}] No subscriptions available")
                 return Response(
                     content='{"error": {"type": "overloaded", "message": "All API subscriptions are currently at capacity. Please retry."}}',
                     status_code=503,
@@ -267,9 +197,7 @@ class AnthropicProxy:
             # Build headers
             headers = self._build_headers(request, subscription)
             
-            logger.info(
-                f"Routing streaming request to {subscription.name}: {request.method} {path}"
-            )
+            logger.info(f"[{request_id}] -> {subscription.name} (streaming) {request.method} {path}")
             
             async with self.tracker.acquire_connection(subscription):
                 try:
@@ -286,21 +214,24 @@ class AnthropicProxy:
                     if response.status_code == 429:
                         await response.aclose()
                         await self.tracker.record_429(subscription)
+                        logger.warning(f"[{request_id}] 429 from {subscription.name}")
                         return Response(
                             content='{"error": {"type": "rate_limit", "message": "Rate limited. Please retry."}}',
                             status_code=429,
                             media_type="application/json",
                         )
                     
+                    logger.info(f"[{request_id}] <- {subscription.name} {response.status_code}")
+                    
                     return StreamingResponse(
-                        self._stream_response(response, subscription),
+                        self._stream_response(response, subscription, request_id),
                         status_code=response.status_code,
                         headers=self._filter_response_headers(response.headers),
                         media_type=response.headers.get("content-type", "text/event-stream"),
                     )
                     
                 except httpx.TimeoutException as e:
-                    logger.error(f"Timeout proxying to {subscription.name}: {e}")
+                    logger.error(f"[{request_id}] Timeout -> {subscription.name}: {e}")
                     await self.tracker.record_error(subscription)
                     return Response(
                         content='{"error": {"type": "timeout", "message": "Request timed out."}}',
@@ -308,7 +239,7 @@ class AnthropicProxy:
                         media_type="application/json",
                     )
                 except httpx.RequestError as e:
-                    logger.error(f"Error proxying to {subscription.name}: {e}")
+                    logger.error(f"[{request_id}] Error -> {subscription.name}: {e}")
                     await self.tracker.record_error(subscription)
                     return Response(
                         content='{"error": {"type": "proxy_error", "message": "Failed to connect to upstream."}}',
@@ -318,12 +249,13 @@ class AnthropicProxy:
         
         # Non-streaming: retry on 429
         excluded: set[str] = set()
+        last_error_response: Response | None = None
         
         for attempt in range(MAX_429_RETRIES + 1):
             subscription = await self.tracker.select_subscription()
             
             if subscription is None:
-                logger.error("No subscriptions available for request")
+                logger.warning(f"[{request_id}] No subscriptions available (attempt {attempt + 1})")
                 return Response(
                     content='{"error": {"type": "overloaded", "message": "All API subscriptions are currently at capacity. Please retry."}}',
                     status_code=503,
@@ -333,14 +265,12 @@ class AnthropicProxy:
             # Skip already-tried subscriptions
             if subscription.name in excluded:
                 # All available have been tried
+                logger.warning(f"[{request_id}] All subscriptions exhausted after {len(excluded)} attempts")
                 break
             
             headers = self._build_headers(request, subscription)
             
-            logger.info(
-                f"Routing request to {subscription.name}: {request.method} {path} "
-                f"(attempt {attempt + 1}/{MAX_429_RETRIES + 1})"
-            )
+            logger.info(f"[{request_id}] -> {subscription.name} (attempt {attempt + 1}) {request.method} {path}")
             
             async with self.tracker.acquire_connection(subscription):
                 try:
@@ -354,13 +284,13 @@ class AnthropicProxy:
                     if response.status_code == 429:
                         await self.tracker.record_429(subscription)
                         excluded.add(subscription.name)
-                        logger.warning(
-                            f"429 from {subscription.name}, retrying with different subscription"
-                        )
+                        logger.warning(f"[{request_id}] 429 from {subscription.name}, will retry")
                         continue  # Try next subscription
                     
                     if response.status_code >= 500:
                         await self.tracker.record_error(subscription)
+                    
+                    logger.info(f"[{request_id}] <- {subscription.name} {response.status_code}")
                     
                     return Response(
                         content=response.content,
@@ -370,23 +300,29 @@ class AnthropicProxy:
                     )
                     
                 except httpx.TimeoutException as e:
-                    logger.error(f"Timeout proxying to {subscription.name}: {e}")
+                    logger.error(f"[{request_id}] Timeout -> {subscription.name}: {e}")
                     await self.tracker.record_error(subscription)
-                    return Response(
+                    last_error_response = Response(
                         content='{"error": {"type": "timeout", "message": "Request timed out."}}',
                         status_code=504,
                         media_type="application/json",
                     )
+                    # Don't retry on timeout - just return
+                    return last_error_response
+                    
                 except httpx.RequestError as e:
-                    logger.error(f"Error proxying to {subscription.name}: {e}")
+                    logger.error(f"[{request_id}] Error -> {subscription.name}: {e}")
                     await self.tracker.record_error(subscription)
-                    return Response(
+                    last_error_response = Response(
                         content='{"error": {"type": "proxy_error", "message": "Failed to connect to upstream."}}',
                         status_code=502,
                         media_type="application/json",
                     )
+                    # Don't retry on connection error - just return
+                    return last_error_response
         
-        # All retries exhausted
+        # All retries exhausted (only 429s)
+        logger.warning(f"[{request_id}] All {len(excluded)} subscriptions rate limited")
         return Response(
             content='{"error": {"type": "rate_limit", "message": "All subscriptions rate limited. Please retry later."}}',
             status_code=429,

@@ -181,7 +181,7 @@ class SubscriptionTracker:
             subscription.total_errors += 1
     
     def get_status(self) -> dict:
-        """Get current status of all subscriptions."""
+        """Get current status of all subscriptions (not thread-safe, use get_status_safe)."""
         subs = [
             state.to_dict(self.cooldown_seconds)
             for state in self._states.values()
@@ -195,3 +195,21 @@ class SubscriptionTracker:
             "total_capacity": total_capacity,
             "available_capacity": total_capacity - total_active,
         }
+    
+    async def get_status_safe(self) -> dict:
+        """Get current status with proper locking."""
+        async with self._global_lock:
+            subs = []
+            for state in self._states.values():
+                async with state._lock:
+                    subs.append(state.to_dict(self.cooldown_seconds))
+            
+            total_active = sum(s["active_connections"] for s in subs)
+            total_capacity = sum(s["max_concurrent"] for s in subs if s["enabled"])
+            
+            return {
+                "subscriptions": subs,
+                "total_active": total_active,
+                "total_capacity": total_capacity,
+                "available_capacity": total_capacity - total_active,
+            }
