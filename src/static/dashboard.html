@@ -318,7 +318,11 @@
                 }) || [];
                 const datasets = Object.keys(subColors).map(sub => ({
                     label: sub,
-                    data: data.by_day?.map(d => d.by_subscription?.[sub] || 0) || [],
+                    data: data.by_day?.map(d => {
+                        const info = d.by_subscription?.[sub];
+                        if (typeof info === 'object') return (info.input_tokens || 0) + (info.output_tokens || 0);
+                        return Number(info) || 0;
+                    }) || [],
                     backgroundColor: subColors[sub],
                     borderRadius: 2
                 }));
@@ -340,9 +344,14 @@
                 // By subscription
                 const bySubEl = document.getElementById('usage-by-sub');
                 const bySubData = data.by_subscription || {};
-                const maxSub = Math.max(...Object.values(bySubData), 1);
+                // Extract token totals from subscription objects
+                const subTotals = {};
+                for (const [sub, info] of Object.entries(bySubData)) {
+                    subTotals[sub] = typeof info === 'object' ? (info.input_tokens || 0) + (info.output_tokens || 0) : Number(info) || 0;
+                }
+                const maxSub = Math.max(...Object.values(subTotals), 1);
                 bySubEl.innerHTML = Object.entries(subColors).map(([sub, color]) => {
-                    const val = bySubData[sub] || 0;
+                    const val = subTotals[sub] || 0;
                     const pct = (val / maxSub) * 100;
                     return `
                         <div>
@@ -360,7 +369,12 @@
                 // By client
                 const byClientEl = document.getElementById('usage-by-client');
                 const byClientData = data.by_client || {};
-                const clientEntries = Object.entries(byClientData).sort((a, b) => b[1] - a[1]);
+                // Extract token totals from client objects
+                const clientTotals = {};
+                for (const [client, info] of Object.entries(byClientData)) {
+                    clientTotals[client] = typeof info === 'object' ? (info.input_tokens || 0) + (info.output_tokens || 0) : Number(info) || 0;
+                }
+                const clientEntries = Object.entries(clientTotals).sort((a, b) => b[1] - a[1]);
                 const maxClient = clientEntries.length > 0 ? clientEntries[0][1] : 1;
                 byClientEl.innerHTML = clientEntries.length === 0 
                     ? '<div class="text-dark-muted text-xs text-center py-2">No data</div>'
