@@ -197,6 +197,18 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Bot Profiles -->
+                <div class="bg-dark-card rounded-lg border border-dark-border">
+                    <div class="p-3 border-b border-dark-border">
+                        <h2 class="font-semibold text-sm">Bot Profiles</h2>
+                    </div>
+                    <div class="p-4">
+                        <div id="bot-profiles" class="space-y-2 text-xs">
+                            <div class="text-dark-muted">Loading...</div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -467,15 +479,55 @@
             }
         }
 
+        async function fetchProfiles() {
+            try {
+                const res = await fetch('/admin/profiles');
+                const data = await res.json();
+                
+                const profilesEl = document.getElementById('bot-profiles');
+                const profiles = data.profiles || {};
+                const entries = Object.entries(profiles);
+                
+                if (entries.length === 0) {
+                    profilesEl.innerHTML = '<div class="text-dark-muted">No bot data yet</div>';
+                    return;
+                }
+                
+                const classColors = {
+                    light: 'text-green-400',
+                    medium: 'text-amber-400', 
+                    heavy: 'text-red-400'
+                };
+                
+                profilesEl.innerHTML = entries.map(([bot, profile]) => {
+                    const cls = profile.classification || 'light';
+                    const color = classColors[cls] || 'text-dark-muted';
+                    return `
+                        <div class="flex justify-between items-center">
+                            <span class="font-mono">${bot}</span>
+                            <span class="${color} font-semibold">${cls.toUpperCase()}</span>
+                        </div>
+                        <div class="text-dark-muted mb-2">
+                            ${formatNumber(profile.avg_tokens_day)}/day · ${profile.avg_requests_hour} req/hr
+                        </div>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error('Failed to fetch profiles:', e);
+            }
+        }
+
         // Initial load
         fetchClients();
         fetchUsage();
         fetchLimits();
+        fetchProfiles();
 
         // Auto-refresh
         setInterval(fetchClients, 5000);
         setInterval(fetchUsage, 30000);
         setInterval(fetchLimits, 60000);
+        setInterval(fetchProfiles, 60000);
     </script>
 </body>
 </html>
