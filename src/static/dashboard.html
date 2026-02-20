@@ -211,6 +211,24 @@
                 </div>
             </div>
         </div>
+
+        <!-- Token Flow Visualization -->
+        <div class="mt-6 bg-dark-card rounded-lg border border-dark-border">
+            <div class="p-3 border-b border-dark-border flex items-center justify-between">
+                <h2 class="font-semibold text-sm">Token Flow</h2>
+                <div class="flex items-center gap-4 text-xs text-dark-muted">
+                    <span class="flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-cyan-400"></span> Input
+                    </span>
+                    <span class="flex items-center gap-1">
+                        <span class="w-2 h-2 rounded-full bg-purple-400"></span> Output
+                    </span>
+                </div>
+            </div>
+            <div class="p-4">
+                <canvas id="flow-canvas" style="width: 100%; height: 280px;"></canvas>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -528,6 +546,212 @@
         setInterval(fetchUsage, 30000);
         setInterval(fetchLimits, 60000);
         setInterval(fetchProfiles, 60000);
+
+        // ========== TOKEN FLOW VISUALIZATION ==========
+        const flowCanvas = document.getElementById('flow-canvas');
+        const flowCtx = flowCanvas.getContext('2d');
+        let flowParticles = [];
+        let flowClients = [];
+        let flowSubs = [];
+        
+        function resizeFlowCanvas() {
+            const rect = flowCanvas.getBoundingClientRect();
+            flowCanvas.width = rect.width * window.devicePixelRatio;
+            flowCanvas.height = rect.height * window.devicePixelRatio;
+            flowCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        }
+        resizeFlowCanvas();
+        window.addEventListener('resize', resizeFlowCanvas);
+
+        class FlowParticle {
+            constructor(startX, startY, endX, endY, color, size) {
+                this.startX = startX;
+                this.startY = startY;
+                this.endX = endX;
+                this.endY = endY;
+                this.color = color;
+                this.size = size;
+                this.progress = 0;
+                this.speed = 0.008 + Math.random() * 0.008;
+                this.trail = [];
+            }
+            
+            update() {
+                this.progress += this.speed;
+                const x = this.startX + (this.endX - this.startX) * this.easeInOut(this.progress);
+                const y = this.startY + (this.endY - this.startY) * this.easeInOut(this.progress);
+                this.trail.unshift({ x, y, alpha: 1 });
+                if (this.trail.length > 12) this.trail.pop();
+                this.trail.forEach((p, i) => p.alpha = 1 - (i / 12));
+                return this.progress < 1;
+            }
+            
+            easeInOut(t) {
+                return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            }
+            
+            draw(ctx) {
+                // Trail
+                this.trail.forEach((p, i) => {
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, this.size * (1 - i * 0.06), 0, Math.PI * 2);
+                    ctx.fillStyle = this.color.replace('1)', `${p.alpha * 0.6})`);
+                    ctx.fill();
+                });
+                // Head glow
+                if (this.trail.length > 0) {
+                    const head = this.trail[0];
+                    ctx.beginPath();
+                    ctx.arc(head.x, head.y, this.size * 2, 0, Math.PI * 2);
+                    const gradient = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, this.size * 2);
+                    gradient.addColorStop(0, this.color.replace('1)', '0.8)'));
+                    gradient.addColorStop(1, this.color.replace('1)', '0)'));
+                    ctx.fillStyle = gradient;
+                    ctx.fill();
+                }
+            }
+        }
+
+        function spawnParticle(clientIdx, subIdx, isInput) {
+            const rect = flowCanvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            const centerX = w / 2;
+            const centerY = h / 2;
+            
+            const clientY = 40 + clientIdx * 50;
+            const subY = 40 + subIdx * 55;
+            
+            const startX = isInput ? 80 : centerX;
+            const startY = isInput ? clientY : centerY;
+            const endX = isInput ? centerX : w - 80;
+            const endY = isInput ? centerY : subY;
+            
+            const color = isInput ? 'rgba(34, 211, 238, 1)' : 'rgba(192, 132, 252, 1)';
+            const size = 2 + Math.random() * 2;
+            
+            flowParticles.push(new FlowParticle(startX, startY, endX, endY, color, size));
+        }
+
+        function drawFlowViz() {
+            const rect = flowCanvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            const centerX = w / 2;
+            const centerY = h / 2;
+            
+            flowCtx.clearRect(0, 0, w, h);
+            
+            // Draw connection lines (faint)
+            flowCtx.strokeStyle = 'rgba(42, 46, 58, 0.5)';
+            flowCtx.lineWidth = 1;
+            
+            flowClients.forEach((client, i) => {
+                const y = 40 + i * 50;
+                flowCtx.beginPath();
+                flowCtx.moveTo(80, y);
+                flowCtx.quadraticCurveTo(centerX - 40, y, centerX, centerY);
+                flowCtx.stroke();
+            });
+            
+            flowSubs.forEach((sub, i) => {
+                const y = 40 + i * 55;
+                flowCtx.beginPath();
+                flowCtx.moveTo(centerX, centerY);
+                flowCtx.quadraticCurveTo(centerX + 40, y, w - 80, y);
+                flowCtx.stroke();
+            });
+            
+            // Draw clients (left)
+            flowClients.forEach((client, i) => {
+                const y = 40 + i * 50;
+                flowCtx.fillStyle = '#1a1d27';
+                flowCtx.strokeStyle = clientColors[i % clientColors.length];
+                flowCtx.lineWidth = 2;
+                flowCtx.beginPath();
+                flowCtx.roundRect(10, y - 15, 70, 30, 6);
+                flowCtx.fill();
+                flowCtx.stroke();
+                flowCtx.fillStyle = '#e4e4e7';
+                flowCtx.font = '11px monospace';
+                flowCtx.textAlign = 'center';
+                flowCtx.fillText(client.slice(0, 8), 45, y + 4);
+            });
+            
+            // Draw load balancer (center)
+            const lbGradient = flowCtx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 50);
+            lbGradient.addColorStop(0, 'rgba(59, 130, 246, 0.3)');
+            lbGradient.addColorStop(1, 'rgba(59, 130, 246, 0)');
+            flowCtx.fillStyle = lbGradient;
+            flowCtx.beginPath();
+            flowCtx.arc(centerX, centerY, 50, 0, Math.PI * 2);
+            flowCtx.fill();
+            
+            flowCtx.fillStyle = '#1a1d27';
+            flowCtx.strokeStyle = '#3b82f6';
+            flowCtx.lineWidth = 2;
+            flowCtx.beginPath();
+            flowCtx.arc(centerX, centerY, 35, 0, Math.PI * 2);
+            flowCtx.fill();
+            flowCtx.stroke();
+            flowCtx.fillStyle = '#e4e4e7';
+            flowCtx.font = 'bold 10px sans-serif';
+            flowCtx.textAlign = 'center';
+            flowCtx.fillText('LOAD', centerX, centerY - 4);
+            flowCtx.fillText('BALANCER', centerX, centerY + 8);
+            
+            // Draw subscriptions (right)
+            flowSubs.forEach((sub, i) => {
+                const y = 40 + i * 55;
+                const color = subColors[sub] || '#666';
+                flowCtx.fillStyle = '#1a1d27';
+                flowCtx.strokeStyle = color;
+                flowCtx.lineWidth = 2;
+                flowCtx.beginPath();
+                flowCtx.roundRect(w - 80, y - 18, 70, 36, 6);
+                flowCtx.fill();
+                flowCtx.stroke();
+                flowCtx.fillStyle = '#e4e4e7';
+                flowCtx.font = 'bold 12px monospace';
+                flowCtx.textAlign = 'center';
+                flowCtx.fillText(sub.toUpperCase(), w - 45, y + 5);
+            });
+            
+            // Update and draw particles
+            flowParticles = flowParticles.filter(p => {
+                const alive = p.update();
+                p.draw(flowCtx);
+                return alive;
+            });
+        }
+
+        function updateFlowData() {
+            fetch('/admin/clients').then(r => r.json()).then(data => {
+                flowClients = data.clients.map(c => c.client_id).slice(0, 5);
+                flowSubs = data.live.subscriptions.map(s => s.name);
+                
+                // Spawn particles based on recent activity
+                data.clients.forEach((client, ci) => {
+                    if (ci >= 5) return;
+                    const subIdx = flowSubs.indexOf(client.last_subscription);
+                    if (subIdx >= 0 && Math.random() < 0.3) {
+                        spawnParticle(ci, subIdx, true);  // Input
+                        setTimeout(() => spawnParticle(ci, subIdx, false), 200 + Math.random() * 300);  // Output
+                    }
+                });
+            }).catch(() => {});
+        }
+
+        // Animation loop
+        function animateFlow() {
+            drawFlowViz();
+            requestAnimationFrame(animateFlow);
+        }
+        
+        // Initialize
+        updateFlowData();
+        setInterval(updateFlowData, 3000);
+        animateFlow();
     </script>
 </body>
 </html>
