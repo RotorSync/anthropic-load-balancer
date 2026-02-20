@@ -204,10 +204,27 @@
         async function fetchLimits() {
             try {
                 const data = await (await fetch('/admin/limits')).json(), accounts = data.accounts || [];
-                const render = (a,p) => { const u = Number(a[p]?.utilization)||0, color = u>=80?'bg-red-500':u>=50?'bg-amber-500':'bg-green-500'; const shortId = a.id.length > 4 ? a.id.slice(0,4) : a.id; return `<div class="flex items-center gap-1 whitespace-nowrap"><span class="w-8 font-mono text-[9px]">${shortId}</span><div class="flex-1 bg-dark-border rounded-full h-1.5"><div class="${color} h-full rounded-full" style="width:${u}%"></div></div><span class="w-7 text-right text-[9px]">${u}%</span></div>`; };
-                document.getElementById('limits-5h').innerHTML = accounts.map(a => render(a,'five_hour')).join('');
-                document.getElementById('limits-7d').innerHTML = accounts.map(a => render(a,'seven_day')).join('');
-            } catch (e) {}
+                const render = (a,p,showTarget) => { 
+                    const u = Number(a[p]?.utilization)||0;
+                    const color = u>=80?'bg-red-500':u>=50?'bg-amber-500':'bg-green-500'; 
+                    const shortId = a.id.length > 4 ? a.id.slice(0,4) : a.id;
+                    // Calculate target (expected usage based on time elapsed)
+                    let targetPct = 0;
+                    if (showTarget && a[p]?.resets_at) {
+                        const resetTime = new Date(a[p].resets_at);
+                        const now = new Date();
+                        const hoursUntilReset = (resetTime - now) / 3600000;
+                        const totalHours = p === 'five_hour' ? 5 : 168; // 5h or 7 days
+                        const hoursElapsed = totalHours - hoursUntilReset;
+                        targetPct = Math.max(0, Math.min(100, (hoursElapsed / totalHours) * 100));
+                    }
+                    const targetMarker = showTarget && targetPct > 0 ? `<div class="absolute top-0 bottom-0 w-0.5 bg-white opacity-60" style="left:${targetPct}%"></div>` : '';
+                    const status = u > targetPct + 5 ? '🔺' : u < targetPct - 5 ? '🔻' : '✓';
+                    return `<div class="flex items-center gap-1 whitespace-nowrap"><span class="w-8 font-mono text-[9px]">${shortId}</span><div class="flex-1 bg-dark-border rounded-full h-1.5 relative overflow-hidden"><div class="${color} h-full rounded-full" style="width:${u}%"></div>${targetMarker}</div><span class="w-10 text-right text-[9px]">${u}%${showTarget ? status : ''}</span></div>`; 
+                };
+                document.getElementById('limits-5h').innerHTML = accounts.map(a => render(a,'five_hour',false)).join('');
+                document.getElementById('limits-7d').innerHTML = accounts.map(a => render(a,'seven_day',true)).join('');
+            } catch (e) { console.error(e); }
         }
 
         async function fetchProfiles() {
@@ -246,7 +263,7 @@
             Promise.all([
                 fetch('/admin/clients').then(r=>r.json()), 
                 fetch('/admin/flow?minutes=5').then(r=>r.json()),
-                fetch('/admin/flow?minutes=0.25').then(r=>r.json())
+                fetch('/admin/flow?minutes=1').then(r=>r.json())
             ])
             .then(([cd, fd, recentFd]) => {
                 flowSubs = cd.live.subscriptions.map(s => s.name);
