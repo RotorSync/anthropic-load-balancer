@@ -9,743 +9,309 @@
     <script>
         tailwind.config = {
             darkMode: 'class',
-            theme: {
-                extend: {
-                    colors: {
-                        dark: {
-                            bg: '#0f1117',
-                            card: '#1a1d27',
-                            border: '#2a2e3a',
-                            text: '#e4e4e7',
-                            muted: '#71717a'
-                        }
-                    }
-                }
-            }
+            theme: { extend: { colors: { dark: { bg: '#0f1117', card: '#1a1d27', border: '#2a2e3a', text: '#e4e4e7', muted: '#71717a' } } } }
         }
     </script>
     <style>
-        html, body { 
-            background: #0f1117; 
-            height: 100%;
-            overflow: hidden;
-        }
-        .glow-green { box-shadow: 0 0 10px rgba(34, 197, 94, 0.3); }
-        .glow-amber { box-shadow: 0 0 10px rgba(245, 158, 11, 0.3); }
-        .glow-red { box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
-        @keyframes pulse-dot {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
+        html, body { background: #0f1117; height: 100%; margin: 0; overflow: hidden; }
         .pulse-dot { animation: pulse-dot 2s infinite; }
+        @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 4px #22c55e; } 50% { box-shadow: 0 0 12px #22c55e, 0 0 20px #22c55e40; } }
+        .active-client { animation: pulse-green 1s infinite; border-color: #22c55e !important; }
     </style>
 </head>
-<body class="text-dark-text p-4 h-screen flex flex-col">
-    <div class="max-w-[1600px] mx-auto w-full flex flex-col h-full">
+<body class="text-dark-text p-3 h-screen">
+    <div class="h-full flex flex-col max-w-[1400px] mx-auto">
         <!-- Header -->
-        <div class="flex items-center justify-between mb-3">
-            <div class="flex items-center gap-4">
-                <h1 class="text-xl font-bold">Anthropic Load Balancer</h1>
-                <span class="text-dark-muted text-sm">192.168.68.181:8080</span>
+        <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-3">
+                <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" class="text-blue-500"/>
+                    <path d="M12 6v6l4 2" class="text-blue-400"/>
+                    <circle cx="12" cy="12" r="3" fill="#3b82f6"/>
+                </svg>
+                <div>
+                    <h1 class="text-lg font-bold">Anthropic Load Balancer</h1>
+                    <span class="text-dark-muted text-[10px] italic">Balancing your stupidity™</span>
+                </div>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 text-xs">
                 <span id="status-dot" class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span>
-                <span id="status-text" class="text-xs text-dark-muted">Connected</span>
-                <span class="text-dark-muted text-xs ml-3">Updated: <span id="last-updated">—</span></span>
+                <span id="status-text" class="text-dark-muted">Connected</span>
+                <span class="text-dark-muted ml-2">Updated: <span id="last-updated">—</span></span>
             </div>
         </div>
 
-        <!-- Stats Overview - Compact -->
-        <div class="grid grid-cols-6 gap-2 mb-3">
-            <div class="bg-dark-card rounded p-2 border border-dark-border">
-                <div class="text-dark-muted text-xs">Capacity</div>
-                <div id="total-capacity" class="text-xl font-bold">20</div>
+        <!-- Stats Row -->
+        <div class="grid grid-cols-6 gap-2 mb-2">
+            <div class="bg-dark-card rounded p-1.5 border border-dark-border text-center">
+                <div class="text-dark-muted text-[10px]">Capacity</div>
+                <div id="total-capacity" class="text-lg font-bold">20</div>
             </div>
-            <div class="bg-dark-card rounded p-2 border border-dark-border">
-                <div class="text-dark-muted text-xs">Active</div>
-                <div id="active-now" class="text-xl font-bold text-amber-500">0</div>
+            <div class="bg-dark-card rounded p-1.5 border border-dark-border text-center">
+                <div class="text-dark-muted text-[10px]">Active</div>
+                <div id="active-now" class="text-lg font-bold text-amber-500">0</div>
             </div>
-            <div class="bg-dark-card rounded p-2 border border-dark-border">
-                <div class="text-dark-muted text-xs">Available</div>
-                <div id="available" class="text-xl font-bold text-green-500">20</div>
+            <div class="bg-dark-card rounded p-1.5 border border-dark-border text-center">
+                <div class="text-dark-muted text-[10px]">Available</div>
+                <div id="available" class="text-lg font-bold text-green-500">20</div>
             </div>
-            <div class="bg-dark-card rounded p-2 border border-dark-border">
-                <div class="text-dark-muted text-xs">Requests Today</div>
-                <div id="requests-today" class="text-xl font-bold">0</div>
+            <div class="bg-dark-card rounded p-1.5 border border-dark-border text-center">
+                <div class="text-dark-muted text-[10px]">Requests</div>
+                <div id="requests-today" class="text-lg font-bold">0</div>
             </div>
-            <div class="bg-dark-card rounded p-2 border border-dark-border">
-                <div class="text-dark-muted text-xs">Tokens Today</div>
-                <div id="tokens-today" class="text-xl font-bold text-blue-400">0</div>
+            <div class="bg-dark-card rounded p-1.5 border border-dark-border text-center">
+                <div class="text-dark-muted text-[10px]">Tokens Today</div>
+                <div id="tokens-today" class="text-lg font-bold text-blue-400">0</div>
             </div>
-            <div class="bg-dark-card rounded p-2 border border-dark-border">
-                <div class="text-dark-muted text-xs">Tokens Week</div>
-                <div id="tokens-week" class="text-xl font-bold text-purple-400">0</div>
+            <div class="bg-dark-card rounded p-1.5 border border-dark-border text-center">
+                <div class="text-dark-muted text-[10px]">Tokens Week</div>
+                <div id="tokens-week" class="text-lg font-bold text-purple-400">0</div>
             </div>
         </div>
 
-        <!-- Main Content - 4 Column Grid -->
-        <div class="grid grid-cols-4 gap-3 flex-1 min-h-0">
-            <!-- Column 1: Bot Profiles & Subscriptions -->
-            <div class="flex flex-col gap-3">
-                <!-- Bot Profiles -->
-                <div class="bg-dark-card rounded border border-dark-border">
-                    <div class="p-2 border-b border-dark-border">
-                        <h2 class="font-semibold text-xs">Bot Profiles</h2>
+        <!-- Main Grid: Left 2/3, Right 1/3 -->
+        <div class="grid grid-cols-3 gap-2 mb-2" style="height: 45%;">
+            <!-- Left Column -->
+            <div class="col-span-2 grid grid-rows-2 gap-2">
+                <!-- Top: Subs + Limits -->
+                <div class="grid grid-cols-2 gap-2">
+                    <div class="bg-dark-card rounded border border-dark-border flex flex-col">
+                        <div class="px-2 py-1 border-b border-dark-border"><h2 class="font-semibold text-[11px]">Subscriptions</h2></div>
+                        <div class="p-2 flex-1"><div id="subscriptions" class="space-y-1.5"></div></div>
                     </div>
-                    <div class="p-2">
-                        <div id="bot-profiles" class="space-y-1 text-xs">
-                            <div class="text-dark-muted">Loading...</div>
+                    <div class="bg-dark-card rounded border border-dark-border flex flex-col">
+                        <div class="px-2 py-1 border-b border-dark-border flex justify-between">
+                            <h2 class="font-semibold text-[11px]">Account Limits</h2>
+                            <span id="limits-updated" class="text-dark-muted text-[10px]"></span>
+                        </div>
+                        <div class="p-2 flex-1 grid grid-cols-2 gap-3 text-[10px]">
+                            <div><div class="text-dark-muted mb-1.5 font-semibold">5-Hour</div><div id="limits-5h" class="space-y-1.5"></div></div>
+                            <div><div class="text-dark-muted mb-1.5 font-semibold">7-Day</div><div id="limits-7d" class="space-y-1.5"></div></div>
                         </div>
                     </div>
                 </div>
-
-                <!-- Subscriptions -->
-                <div class="bg-dark-card rounded border border-dark-border flex-1">
-                    <div class="p-2 border-b border-dark-border">
-                        <h2 class="font-semibold text-xs">Subscriptions</h2>
-                    </div>
-                    <div class="p-2">
-                        <div id="subscriptions" class="space-y-2">
-                            <!-- Populated by JS -->
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Account Limits -->
-                <div class="bg-dark-card rounded border border-dark-border">
-                    <div class="p-2 border-b border-dark-border flex items-center justify-between">
-                        <h2 class="font-semibold text-xs">Account Limits</h2>
-                        <span id="limits-updated" class="text-dark-muted text-xs"></span>
-                    </div>
-                    <div class="p-2">
-                        <div class="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                                <div class="text-dark-muted mb-1">5-Hour</div>
-                                <div id="limits-5h" class="space-y-1"></div>
-                            </div>
-                            <div>
-                                <div class="text-dark-muted mb-1">7-Day</div>
-                                <div id="limits-7d" class="space-y-1"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Column 2-3: Clients Table & Flow Viz -->
-            <div class="col-span-2 flex flex-col gap-3">
-                <!-- Clients -->
-                <div class="bg-dark-card rounded border border-dark-border">
-                    <div class="p-2 border-b border-dark-border">
-                        <h2 class="font-semibold text-xs">Clients</h2>
-                    </div>
-                    <div class="p-2 max-h-32 overflow-y-auto">
-                        <table class="w-full text-xs">
-                            <thead>
-                                <tr class="text-dark-muted text-left">
-                                    <th class="pb-1">Client</th>
-                                    <th class="pb-1">Sub</th>
-                                    <th class="pb-1">Req</th>
-                                    <th class="pb-1">Day</th>
-                                    <th class="pb-1">Week</th>
-                                    <th class="pb-1">Last</th>
-                                </tr>
-                            </thead>
-                            <tbody id="clients-table">
-                                <tr><td colspan="6" class="text-dark-muted text-center py-4">No clients yet</td></tr>
-                            </tbody>
+                <!-- Bottom: Clients -->
+                <div class="bg-dark-card rounded border border-dark-border flex flex-col">
+                    <div class="px-2 py-1 border-b border-dark-border"><h2 class="font-semibold text-[11px]">Clients</h2></div>
+                    <div class="p-2 flex-1 overflow-y-auto">
+                        <table class="w-full text-[10px]">
+                            <thead><tr class="text-dark-muted text-left"><th class="pb-1">Client</th><th class="pb-1">Sub</th><th class="pb-1">Req</th><th class="pb-1">Day</th><th class="pb-1">Week</th><th class="pb-1">Last</th></tr></thead>
+                            <tbody id="clients-table"><tr><td colspan="6" class="text-dark-muted text-center py-2">No clients</td></tr></tbody>
                         </table>
                     </div>
                 </div>
-
-                <!-- Token Flow Visualization -->
-                <div class="bg-dark-card rounded border border-dark-border flex-1">
-                    <div class="p-2 border-b border-dark-border flex items-center justify-between">
-                        <h2 class="font-semibold text-xs">Token Flow</h2>
-                        <div class="flex items-center gap-3 text-xs text-dark-muted">
-                            <span class="flex items-center gap-1">
-                                <span class="w-2 h-2 rounded-full bg-cyan-400"></span> In
-                            </span>
-                            <span class="flex items-center gap-1">
-                                <span class="w-2 h-2 rounded-full bg-purple-400"></span> Out
-                            </span>
-                        </div>
-                    </div>
-                    <div class="p-2 h-[calc(100%-32px)]">
-                        <canvas id="flow-canvas" class="w-full h-full"></canvas>
-                    </div>
-                </div>
             </div>
 
-            <!-- Column 4: Usage Charts -->
-            <div class="flex flex-col gap-3">
-                <!-- Chart -->
+            <!-- Right Column -->
+            <div class="flex flex-col gap-2">
+                <!-- Usage Chart -->
                 <div class="bg-dark-card rounded border border-dark-border">
-                    <div class="p-2 border-b border-dark-border flex items-center justify-between">
-                        <h2 class="font-semibold text-xs">Token Usage</h2>
-                        <div class="flex gap-1">
-                            <button onclick="setPeriod('day')" id="btn-day" class="px-1.5 py-0.5 text-xs rounded bg-dark-border">D</button>
-                            <button onclick="setPeriod('week')" id="btn-week" class="px-1.5 py-0.5 text-xs rounded bg-blue-600">W</button>
-                            <button onclick="setPeriod('month')" id="btn-month" class="px-1.5 py-0.5 text-xs rounded bg-dark-border">M</button>
+                    <div class="px-2 py-1 border-b border-dark-border flex justify-between items-center">
+                        <h2 class="font-semibold text-[11px]">Usage</h2>
+                        <div class="flex gap-0.5">
+                            <button onclick="setPeriod('day')" id="btn-day" class="px-1 text-[10px] rounded bg-dark-border">D</button>
+                            <button onclick="setPeriod('week')" id="btn-week" class="px-1 text-[10px] rounded bg-blue-600">W</button>
+                            <button onclick="setPeriod('month')" id="btn-month" class="px-1 text-[10px] rounded bg-dark-border">M</button>
                         </div>
                     </div>
                     <div class="p-2">
-                        <div style="height: 100px;">
-                            <canvas id="usage-chart"></canvas>
-                        </div>
-                        <div id="usage-total" class="text-center mt-1">
-                            <span class="text-lg font-bold">0</span>
-                            <span class="text-dark-muted text-xs ml-1">tokens</span>
-                        </div>
+                        <div style="height: 70px;"><canvas id="usage-chart"></canvas></div>
+                        <div id="usage-total" class="text-center text-sm font-bold">0 <span class="text-dark-muted text-[10px] font-normal">tokens</span></div>
                     </div>
                 </div>
-
-                <!-- By Subscription -->
-                <div class="bg-dark-card rounded border border-dark-border">
-                    <div class="p-2 border-b border-dark-border">
-                        <h2 class="font-semibold text-xs">By Subscription</h2>
-                    </div>
-                    <div class="p-2">
-                        <div id="usage-by-sub" class="space-y-1 text-xs"></div>
-                    </div>
-                </div>
-
-                <!-- By Client -->
+                <!-- Breakdown -->
                 <div class="bg-dark-card rounded border border-dark-border flex-1">
-                    <div class="p-2 border-b border-dark-border">
-                        <h2 class="font-semibold text-xs">By Client</h2>
-                    </div>
-                    <div class="p-2">
-                        <div id="usage-by-client" class="space-y-1 text-xs"></div>
+                    <div class="px-2 py-1 border-b border-dark-border"><h2 class="font-semibold text-[11px]">Breakdown</h2></div>
+                    <div class="p-2 grid grid-cols-2 gap-2 text-[10px]">
+                        <div><div class="text-dark-muted mb-1">By Subscription</div><div id="usage-by-sub" class="space-y-1"></div></div>
+                        <div><div class="text-dark-muted mb-1">By Client</div><div id="usage-by-client" class="space-y-1"></div></div>
                     </div>
                 </div>
+                <!-- Bot Profiles -->
+                <div class="bg-dark-card rounded border border-dark-border">
+                    <div class="px-2 py-1 border-b border-dark-border"><h2 class="font-semibold text-[11px]">Bot Profiles</h2></div>
+                    <div class="p-2"><div id="bot-profiles" class="space-y-1 text-[10px]"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Token Flow - Full Width -->
+        <div class="bg-dark-card rounded border border-dark-border flex-1 flex flex-col min-h-0">
+            <div class="px-2 py-1 border-b border-dark-border flex justify-between items-center">
+                <h2 class="font-semibold text-[11px]">Token Flow</h2>
+                <div class="flex gap-2 text-[10px] text-dark-muted">
+                    <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>In</span>
+                    <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-purple-400"></span>Out</span>
+                </div>
+            </div>
+            <div class="flex-1 p-1 min-h-0">
+                <canvas id="flow-canvas" class="w-full h-full"></canvas>
             </div>
         </div>
     </div>
 
     <script>
-        let currentPeriod = 'week';
-        let usageChart = null;
-        const subColors = {
-            'hh': '#3b82f6',
-            'cam': '#22c55e', 
-            'norm': '#f59e0b',
-            'headings2': '#8b5cf6'
-        };
+        let currentPeriod = 'week', usageChart = null;
+        const subColors = { 'hh': '#3b82f6', 'cam': '#22c55e', 'norm': '#f59e0b', 'headings2': '#8b5cf6' };
         const clientColors = ['#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'];
 
-        function formatNumber(n) {
-            if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
-            if (n >= 1000) return (n / 1000).toFixed(1) + 'k';
-            return n.toString();
-        }
-
-        function formatTime(iso) {
-            if (!iso) return '—';
-            const d = new Date(iso);
-            const now = new Date();
-            const diff = (now - d) / 1000;
-            if (diff < 60) return 'now';
-            if (diff < 3600) return Math.floor(diff / 60) + 'm';
-            if (diff < 86400) return Math.floor(diff / 3600) + 'h';
-            return d.toLocaleDateString();
-        }
-
-        function setPeriod(p) {
-            currentPeriod = p;
-            document.querySelectorAll('[id^="btn-"]').forEach(b => {
-                b.className = b.id === 'btn-' + p 
-                    ? 'px-1.5 py-0.5 text-xs rounded bg-blue-600'
-                    : 'px-1.5 py-0.5 text-xs rounded bg-dark-border';
-            });
-            fetchUsage();
-        }
+        function formatNumber(n) { if (n >= 1e6) return (n/1e6).toFixed(1)+'M'; if (n >= 1e3) return (n/1e3).toFixed(1)+'k'; return n.toString(); }
+        function formatTime(iso) { if (!iso) return '—'; const d = new Date(iso), diff = (Date.now() - d) / 1000; if (diff < 60) return 'now'; if (diff < 3600) return Math.floor(diff/60)+'m'; if (diff < 86400) return Math.floor(diff/3600)+'h'; return d.toLocaleDateString(); }
+        function setPeriod(p) { currentPeriod = p; document.querySelectorAll('[id^="btn-"]').forEach(b => b.className = b.id === 'btn-'+p ? 'px-1 text-[10px] rounded bg-blue-600' : 'px-1 text-[10px] rounded bg-dark-border'); fetchUsage(); }
 
         async function fetchClients() {
             try {
-                const res = await fetch('/admin/clients');
-                const data = await res.json();
-                
-                const live = data.live;
+                const data = await (await fetch('/admin/clients')).json(), live = data.live;
                 document.getElementById('total-capacity').textContent = live.total_capacity;
                 document.getElementById('active-now').textContent = live.total_active;
                 document.getElementById('available').textContent = live.available_capacity;
-                
-                // Subscriptions
-                const subsEl = document.getElementById('subscriptions');
-                subsEl.innerHTML = live.subscriptions.map(sub => {
-                    const name = String(sub.name || '');
-                    const active = Number(sub.active_connections) || 0;
-                    const max = Number(sub.max_concurrent) || 5;
-                    const requests = Number(sub.total_requests) || 0;
-                    const inCooldown = Boolean(sub.in_cooldown);
-                    const pct = (active / max) * 100;
-                    const color = inCooldown ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-green-500';
-                    return `
-                        <div class="flex items-center gap-2 text-xs">
-                            <div class="w-12 font-mono">${name}</div>
-                            <div class="flex-1 bg-dark-border rounded-full h-1.5 overflow-hidden">
-                                <div class="${color} h-full transition-all" style="width: ${pct}%"></div>
-                            </div>
-                            <div class="text-dark-muted w-8 text-right">${active}/${max}</div>
-                            ${inCooldown ? '<span class="text-red-500">⚠</span>' : ''}
-                        </div>
-                    `;
+                document.getElementById('subscriptions').innerHTML = live.subscriptions.map(s => {
+                    const pct = ((s.active_connections||0) / (s.max_concurrent||5)) * 100, color = s.in_cooldown ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-green-500';
+                    return `<div class="flex items-center gap-2 text-[10px]"><span class="w-12 font-mono">${s.name}</span><div class="flex-1 bg-dark-border rounded-full h-1.5"><div class="${color} h-full rounded-full" style="width:${pct}%"></div></div><span class="text-dark-muted w-8 text-right">${s.active_connections}/${s.max_concurrent}</span>${s.in_cooldown?'<span class="text-red-500">⚠</span>':''}</div>`;
                 }).join('');
-
-                // Clients table
-                const clientsEl = document.getElementById('clients-table');
-                if (data.clients.length === 0) {
-                    clientsEl.innerHTML = `<tr><td colspan="6" class="text-dark-muted text-center py-4">No clients yet</td></tr>`;
-                } else {
-                    clientsEl.innerHTML = data.clients.map(c => {
-                        const clientId = String(c.client_id || 'unknown');
-                        const lastSub = String(c.last_subscription || '—');
-                        const requests = Number(c.total_requests) || 0;
-                        const tokensDay = Number(c.tokens_today || c.total_tokens) || 0;
-                        const tokensWeek = Number(c.tokens_week || c.total_tokens) || 0;
-                        const lastSeen = c.last_seen || '';
-                        const subColor = subColors[lastSub] || '#666';
-                        return `
-                            <tr class="border-t border-dark-border">
-                                <td class="py-1 font-mono">${clientId}</td>
-                                <td class="py-1">
-                                    <span class="px-1 py-0.5 rounded text-xs" style="background: ${subColor}20; color: ${subColor}">${lastSub}</span>
-                                </td>
-                                <td class="py-1">${formatNumber(requests)}</td>
-                                <td class="py-1">${formatNumber(tokensDay)}</td>
-                                <td class="py-1">${formatNumber(tokensWeek)}</td>
-                                <td class="py-1 text-dark-muted">${formatTime(lastSeen)}</td>
-                            </tr>
-                        `;
-                    }).join('');
-                }
-
-                // Stats
-                const requestsToday = data.clients.reduce((sum, c) => sum + (c.requests_today || c.total_requests || 0), 0);
-                const tokensToday = data.clients.reduce((sum, c) => sum + (c.tokens_today || c.total_tokens || 0), 0);
-                document.getElementById('requests-today').textContent = formatNumber(requestsToday);
-                document.getElementById('tokens-today').textContent = formatNumber(tokensToday);
-
+                document.getElementById('clients-table').innerHTML = data.clients.length === 0 ? '<tr><td colspan="6" class="text-dark-muted text-center py-2">No clients</td></tr>' : data.clients.map(c => {
+                    const sc = subColors[c.last_subscription] || '#666';
+                    return `<tr class="border-t border-dark-border"><td class="py-0.5 font-mono">${c.client_id}</td><td class="py-0.5"><span class="px-1 rounded" style="background:${sc}20;color:${sc}">${c.last_subscription||'—'}</span></td><td class="py-0.5">${formatNumber(c.total_requests||0)}</td><td class="py-0.5">${formatNumber(c.tokens_today||c.total_tokens||0)}</td><td class="py-0.5">${formatNumber(c.tokens_week||c.total_tokens||0)}</td><td class="py-0.5 text-dark-muted">${formatTime(c.last_seen)}</td></tr>`;
+                }).join('');
+                document.getElementById('requests-today').textContent = formatNumber(data.clients.reduce((s,c) => s + (c.requests_today||c.total_requests||0), 0));
+                document.getElementById('tokens-today').textContent = formatNumber(data.clients.reduce((s,c) => s + (c.tokens_today||c.total_tokens||0), 0));
                 document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
                 document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-green-500 pulse-dot';
-                document.getElementById('status-text').textContent = 'Connected';
-            } catch (e) {
-                console.error('Failed to fetch clients:', e);
-                document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500';
-                document.getElementById('status-text').textContent = 'Disconnected';
-            }
+            } catch (e) { document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500'; document.getElementById('status-text').textContent = 'Disconnected'; }
         }
 
         async function fetchUsage() {
             try {
-                const res = await fetch(`/admin/usage?period=${currentPeriod}`);
-                const data = await res.json();
-
-                const total = data.total_tokens || 0;
-                document.getElementById('usage-total').innerHTML = `
-                    <span class="text-lg font-bold">${formatNumber(total)}</span>
-                    <span class="text-dark-muted text-xs ml-1">tokens</span>
-                `;
-
-                if (currentPeriod === 'week') {
-                    document.getElementById('tokens-week').textContent = formatNumber(total);
-                }
-
-                // Chart
-                const ctx = document.getElementById('usage-chart').getContext('2d');
-                if (usageChart) usageChart.destroy();
-                
-                const labels = data.by_day?.map(d => {
-                    const date = new Date(d.date);
-                    return date.toLocaleDateString('en-US', { weekday: 'short' });
-                }) || [];
-                const datasets = Object.keys(subColors).map(sub => ({
-                    label: sub,
-                    data: data.by_day?.map(d => {
-                        const info = d.by_subscription?.[sub];
-                        if (typeof info === 'object') return (info.input_tokens || 0) + (info.output_tokens || 0);
-                        return Number(info) || 0;
-                    }) || [],
-                    backgroundColor: subColors[sub],
-                    borderRadius: 2
-                }));
-
-                usageChart = new Chart(ctx, {
-                    type: 'bar',
-                    data: { labels, datasets },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            x: { stacked: true, grid: { display: false }, ticks: { color: '#71717a', font: { size: 9 } } },
-                            y: { stacked: true, grid: { color: '#2a2e3a' }, ticks: { color: '#71717a', font: { size: 9 }, callback: v => formatNumber(v) } }
-                        },
-                        plugins: { legend: { display: false } }
-                    }
-                });
-
-                // By subscription
-                const bySubEl = document.getElementById('usage-by-sub');
-                const bySubData = data.by_subscription || {};
-                const subTotals = {};
-                for (const [sub, info] of Object.entries(bySubData)) {
-                    subTotals[sub] = typeof info === 'object' ? (info.input_tokens || 0) + (info.output_tokens || 0) : Number(info) || 0;
-                }
+                const data = await (await fetch(`/admin/usage?period=${currentPeriod}`)).json(), total = data.total_tokens || 0;
+                document.getElementById('usage-total').innerHTML = `${formatNumber(total)} <span class="text-dark-muted text-[10px] font-normal">tokens</span>`;
+                if (currentPeriod === 'week') document.getElementById('tokens-week').textContent = formatNumber(total);
+                const ctx = document.getElementById('usage-chart').getContext('2d'); if (usageChart) usageChart.destroy();
+                // Show subscription breakdown as horizontal bars
+                const subData = data.by_subscription || {};
+                const subLabels = Object.keys(subColors);
+                const subValues = subLabels.map(s => { const d = subData[s]; return typeof d==='object' ? (d.input_tokens||0)+(d.output_tokens||0) : Number(d)||0; });
+                usageChart = new Chart(ctx, { type: 'bar', data: { labels: subLabels.map(s => s.toUpperCase()), datasets: [{ data: subValues, backgroundColor: subLabels.map(s => subColors[s]), borderRadius: 3 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { grid: { color: '#2a2e3a' }, ticks: { color: '#71717a', font: { size: 8 }, callback: v => formatNumber(v) } }, y: { grid: { display: false }, ticks: { color: '#e4e4e7', font: { size: 9, weight: 'bold' } } } }, plugins: { legend: { display: false } } } });
+                const bySubData = data.by_subscription || {}, subTotals = {}; for (const [s,i] of Object.entries(bySubData)) subTotals[s] = typeof i==='object' ? (i.input_tokens||0)+(i.output_tokens||0) : Number(i)||0;
                 const maxSub = Math.max(...Object.values(subTotals), 1);
-                bySubEl.innerHTML = Object.entries(subColors).map(([sub, color]) => {
-                    const val = subTotals[sub] || 0;
-                    const pct = (val / maxSub) * 100;
-                    return `
-                        <div class="flex items-center gap-2">
-                            <span class="w-10">${sub}</span>
-                            <div class="flex-1 bg-dark-border rounded-full h-1 overflow-hidden">
-                                <div style="width: ${pct}%; background: ${color}" class="h-full"></div>
-                            </div>
-                            <span class="text-dark-muted w-10 text-right">${formatNumber(val)}</span>
-                        </div>
-                    `;
-                }).join('');
-
-                // By client
-                const byClientEl = document.getElementById('usage-by-client');
-                const byClientData = data.by_client || {};
-                const clientTotals = {};
-                for (const [client, info] of Object.entries(byClientData)) {
-                    clientTotals[client] = typeof info === 'object' ? (info.input_tokens || 0) + (info.output_tokens || 0) : Number(info) || 0;
-                }
-                const clientEntries = Object.entries(clientTotals).sort((a, b) => b[1] - a[1]);
-                const maxClient = clientEntries.length > 0 ? clientEntries[0][1] : 1;
-                byClientEl.innerHTML = clientEntries.length === 0 
-                    ? '<div class="text-dark-muted text-center py-2">No data</div>'
-                    : clientEntries.slice(0, 5).map(([client, val], i) => {
-                        const pct = (val / maxClient) * 100;
-                        const color = clientColors[i % clientColors.length];
-                        return `
-                            <div class="flex items-center gap-2">
-                                <span class="w-12 font-mono truncate">${client}</span>
-                                <div class="flex-1 bg-dark-border rounded-full h-1 overflow-hidden">
-                                    <div style="width: ${pct}%; background: ${color}" class="h-full"></div>
-                                </div>
-                                <span class="text-dark-muted w-10 text-right">${formatNumber(val)}</span>
-                            </div>
-                        `;
-                    }).join('');
-
-            } catch (e) {
-                console.error('Failed to fetch usage:', e);
-            }
+                document.getElementById('usage-by-sub').innerHTML = Object.entries(subColors).map(([sub,color]) => { const val = subTotals[sub]||0, pct = (val/maxSub)*100, shortSub = sub.length > 4 ? sub.slice(0,4) : sub; return `<div class="flex items-center gap-1 whitespace-nowrap"><span class="w-8 truncate">${shortSub}</span><div class="flex-1 bg-dark-border rounded-full h-1"><div style="width:${pct}%;background:${color}" class="h-full rounded-full"></div></div><span class="text-dark-muted w-6 text-right">${formatNumber(val)}</span></div>`; }).join('');
+                const byClientData = data.by_client || {}, clientTotals = {}; for (const [c,i] of Object.entries(byClientData)) clientTotals[c] = typeof i==='object' ? (i.input_tokens||0)+(i.output_tokens||0) : Number(i)||0;
+                const clientEntries = Object.entries(clientTotals).sort((a,b) => b[1]-a[1]), maxClient = clientEntries[0]?.[1]||1;
+                document.getElementById('usage-by-client').innerHTML = clientEntries.length===0 ? '<div class="text-dark-muted">—</div>' : clientEntries.slice(0,4).map(([c,val],i) => { const pct = (val/maxClient)*100, color = clientColors[i%clientColors.length]; return `<div class="flex items-center gap-1"><span class="w-10 font-mono truncate">${c}</span><div class="flex-1 bg-dark-border rounded-full h-1"><div style="width:${pct}%;background:${color}" class="h-full rounded-full"></div></div><span class="text-dark-muted w-6 text-right">${formatNumber(val)}</span></div>`; }).join('');
+            } catch (e) { console.error(e); }
         }
 
         async function fetchLimits() {
             try {
-                const res = await fetch('/admin/limits');
-                const data = await res.json();
-                
-                const accounts = data.accounts || [];
-                const limits5h = document.getElementById('limits-5h');
-                const limits7d = document.getElementById('limits-7d');
-                
-                function renderBar(account, period) {
-                    const util = Number(account[period]?.utilization) || 0;
-                    const color = util >= 80 ? 'bg-red-500' : util >= 50 ? 'bg-amber-500' : 'bg-green-500';
-                    const name = account.id || '?';
-                    return `
-                        <div class="flex items-center gap-1">
-                            <div class="w-10 font-mono">${name}</div>
-                            <div class="flex-1 bg-dark-border rounded-full h-1 overflow-hidden">
-                                <div class="${color} h-full" style="width: ${util}%"></div>
-                            </div>
-                            <div class="w-6 text-right">${util}%</div>
-                        </div>
-                    `;
-                }
-                
-                limits5h.innerHTML = accounts.map(a => renderBar(a, 'five_hour')).join('');
-                limits7d.innerHTML = accounts.map(a => renderBar(a, 'seven_day')).join('');
-            } catch (e) {
-                console.error('Failed to fetch limits:', e);
-            }
+                const data = await (await fetch('/admin/limits')).json(), accounts = data.accounts || [];
+                const render = (a,p) => { const u = Number(a[p]?.utilization)||0, color = u>=80?'bg-red-500':u>=50?'bg-amber-500':'bg-green-500'; const shortId = a.id.length > 4 ? a.id.slice(0,4) : a.id; return `<div class="flex items-center gap-1 whitespace-nowrap"><span class="w-8 font-mono text-[9px]">${shortId}</span><div class="flex-1 bg-dark-border rounded-full h-1.5"><div class="${color} h-full rounded-full" style="width:${u}%"></div></div><span class="w-7 text-right text-[9px]">${u}%</span></div>`; };
+                document.getElementById('limits-5h').innerHTML = accounts.map(a => render(a,'five_hour')).join('');
+                document.getElementById('limits-7d').innerHTML = accounts.map(a => render(a,'seven_day')).join('');
+            } catch (e) {}
         }
 
         async function fetchProfiles() {
             try {
-                const res = await fetch('/admin/profiles');
-                const data = await res.json();
-                
-                const profilesEl = document.getElementById('bot-profiles');
-                const profiles = data.profiles || {};
-                const entries = Object.entries(profiles);
-                
-                if (entries.length === 0) {
-                    profilesEl.innerHTML = '<div class="text-dark-muted">No bots yet</div>';
-                    return;
-                }
-                
-                const classColors = { light: 'text-green-400', medium: 'text-amber-400', heavy: 'text-red-400' };
-                const classIcons = { light: '🟢', medium: '🟡', heavy: '🔴' };
-                
-                profilesEl.innerHTML = entries.map(([bot, profile]) => {
-                    const cls = profile.classification || 'light';
-                    return `
-                        <div class="flex justify-between items-center">
-                            <span class="font-mono">${bot}</span>
-                            <span>${classIcons[cls]} ${formatNumber(profile.avg_tokens_day)}/d</span>
-                        </div>
-                    `;
-                }).join('');
-            } catch (e) {
-                console.error('Failed to fetch profiles:', e);
-            }
+                const data = await (await fetch('/admin/profiles')).json(), profiles = data.profiles || {}, entries = Object.entries(profiles);
+                const icons = { light: '🟢', medium: '🟡', heavy: '🔴' };
+                document.getElementById('bot-profiles').innerHTML = entries.length===0 ? '<div class="text-dark-muted">No bots</div>' : entries.map(([bot,p]) => `<div class="flex justify-between"><span class="font-mono">${bot}</span><span>${icons[p.classification]||'🟢'} ${formatNumber(p.avg_tokens_day)}/d</span></div>`).join('');
+            } catch (e) {}
         }
 
-        // ========== TOKEN FLOW VISUALIZATION ==========
-        const flowCanvas = document.getElementById('flow-canvas');
-        const flowCtx = flowCanvas.getContext('2d');
-        let flowParticles = [];
-        let flowClients = [];
-        let flowSubs = [];
-        
-        function resizeFlowCanvas() {
-            const rect = flowCanvas.getBoundingClientRect();
-            flowCanvas.width = rect.width * window.devicePixelRatio;
-            flowCanvas.height = rect.height * window.devicePixelRatio;
-            flowCtx.scale(window.devicePixelRatio, window.devicePixelRatio);
-        }
-        resizeFlowCanvas();
-        window.addEventListener('resize', resizeFlowCanvas);
+        // Flow visualization
+        const flowCanvas = document.getElementById('flow-canvas'), flowCtx = flowCanvas.getContext('2d');
+        let flowParticles = [], flowClients = [], flowSubs = [], clientTokens = {}, activeClients = {};
 
-        class FlowParticle {
-            constructor(startX, startY, endX, endY, color, size) {
-                this.startX = startX;
-                this.startY = startY;
-                this.endX = endX;
-                this.endY = endY;
-                this.color = color;
-                this.size = size;
-                this.progress = 0;
-                this.speed = 0.01 + Math.random() * 0.01;
-                this.trail = [];
-            }
-            
-            update() {
-                this.progress += this.speed;
-                const t = this.easeInOut(this.progress);
-                const x = this.startX + (this.endX - this.startX) * t;
-                const y = this.startY + (this.endY - this.startY) * t;
-                this.trail.unshift({ x, y, alpha: 1 });
-                if (this.trail.length > 8) this.trail.pop();
-                this.trail.forEach((p, i) => p.alpha = 1 - (i / 8));
-                return this.progress < 1;
-            }
-            
-            easeInOut(t) {
-                return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-            }
-            
-            draw(ctx) {
-                this.trail.forEach((p, i) => {
-                    ctx.beginPath();
-                    ctx.arc(p.x, p.y, this.size * (1 - i * 0.08), 0, Math.PI * 2);
-                    ctx.fillStyle = this.color.replace('1)', `${p.alpha * 0.7})`);
-                    ctx.fill();
-                });
-                if (this.trail.length > 0) {
-                    const head = this.trail[0];
-                    ctx.beginPath();
-                    ctx.arc(head.x, head.y, this.size * 1.5, 0, Math.PI * 2);
-                    const gradient = ctx.createRadialGradient(head.x, head.y, 0, head.x, head.y, this.size * 1.5);
-                    gradient.addColorStop(0, this.color.replace('1)', '0.9)'));
-                    gradient.addColorStop(1, this.color.replace('1)', '0)'));
-                    ctx.fillStyle = gradient;
-                    ctx.fill();
-                }
-            }
+        function resizeFlowCanvas() { const r = flowCanvas.getBoundingClientRect(); flowCanvas.width = r.width * devicePixelRatio; flowCanvas.height = r.height * devicePixelRatio; flowCtx.scale(devicePixelRatio, devicePixelRatio); }
+        resizeFlowCanvas(); window.addEventListener('resize', resizeFlowCanvas);
+
+        class Particle {
+            constructor(sx,sy,ex,ey,color,size) { this.sx=sx; this.sy=sy; this.ex=ex; this.ey=ey; this.color=color; this.size=size; this.p=0; this.speed=0.012+Math.random()*0.008; this.trail=[]; }
+            update() { this.p += this.speed; const t = this.p<0.5 ? 2*this.p*this.p : 1-Math.pow(-2*this.p+2,2)/2, x = this.sx+(this.ex-this.sx)*t, y = this.sy+(this.ey-this.sy)*t; this.trail.unshift({x,y}); if(this.trail.length>6) this.trail.pop(); return this.p<1; }
+            draw(ctx) { this.trail.forEach((p,i) => { ctx.beginPath(); ctx.arc(p.x,p.y,this.size*(1-i*0.1),0,Math.PI*2); ctx.fillStyle = this.color.replace('1)',`${0.8-i*0.12})`); ctx.fill(); }); }
         }
 
-        function spawnParticle(clientIdx, subIdx, isInput) {
-            spawnParticleWithSize(clientIdx, subIdx, isInput, 2 + Math.random() * 2);
+        function spawnParticle(ci,si,isIn,size) {
+            const r = flowCanvas.getBoundingClientRect(), w=r.width, h=r.height, cx=w/2, cy=h/2;
+            const clientY = 18 + ci*30, subY = 18 + si*35;
+            const sx = isIn?70:cx, sy = isIn?clientY:cy, ex = isIn?cx:w-70, ey = isIn?cy:subY;
+            // Use client's color for particles
+            const clientColor = clientColors[ci] || '#06b6d4';
+            const rgbMatch = clientColor.match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+            const particleColor = rgbMatch ? `rgba(${parseInt(rgbMatch[1],16)},${parseInt(rgbMatch[2],16)},${parseInt(rgbMatch[3],16)},1)` : 'rgba(34,211,238,1)';
+            flowParticles.push(new Particle(sx, sy, ex, ey, particleColor, size));
         }
 
-        let clientTokens = {};
-        let flowData = [];
-        
         function updateFlowData() {
             Promise.all([
-                fetch('/admin/clients').then(r => r.json()),
-                fetch('/admin/flow?minutes=5').then(r => r.json())
-            ]).then(([clientData, flowResponse]) => {
-                flowSubs = clientData.live.subscriptions.map(s => s.name);
-                flowData = flowResponse.flows || [];
-                
-                const clientSet = new Set();
-                flowData.forEach(f => clientSet.add(f.from));
-                flowClients = Array.from(clientSet).slice(0, 4);
-                
-                let maxTokens = 1;
-                flowData.forEach(f => {
-                    clientTokens[f.from] = (clientTokens[f.from] || 0) + f.tokens;
-                    if (clientTokens[f.from] > maxTokens) maxTokens = clientTokens[f.from];
+                fetch('/admin/clients').then(r=>r.json()), 
+                fetch('/admin/flow?minutes=5').then(r=>r.json()),
+                fetch('/admin/flow?minutes=0.25').then(r=>r.json())
+            ])
+            .then(([cd, fd, recentFd]) => {
+                flowSubs = cd.live.subscriptions.map(s => s.name);
+                const flows = fd.flows || [], cs = new Set(); flows.forEach(f => cs.add(f.from));
+                flowClients = Array.from(cs).slice(0, 5);
+                // Track active clients (had flow in last 15 seconds)
+                activeClients = {};
+                (recentFd.flows || []).forEach(f => { if (f.tokens > 0) activeClients[f.from] = true; });
+                let max = 1; flows.forEach(f => { clientTokens[f.from] = (clientTokens[f.from]||0) + f.tokens; if(clientTokens[f.from] > max) max = clientTokens[f.from]; });
+                flows.forEach(f => {
+                    const ci = flowClients.indexOf(f.from), si = flowSubs.indexOf(f.to);
+                    if (ci<0 || si<0) return;
+                    const rate = Math.min(0.85, 0.1 + (f.tokens/max)*0.75), sz = 2 + (f.tokens/max)*2;
+                    if (Math.random() < rate) { const burst = Math.ceil(1+(f.tokens/max)*2); for(let b=0;b<burst;b++) setTimeout(()=>{ if(f.input_tokens) spawnParticle(ci,si,true,sz); setTimeout(()=>{ if(f.output_tokens) spawnParticle(ci,si,false,sz*0.8); },100+Math.random()*150); },b*60); }
                 });
-                
-                flowData.forEach(flow => {
-                    const ci = flowClients.indexOf(flow.from);
-                    const subIdx = flowSubs.indexOf(flow.to);
-                    if (ci < 0 || ci >= 4 || subIdx < 0) return;
-                    
-                    const tokens = flow.tokens || 0;
-                    const flowRate = Math.min(0.9, 0.15 + (tokens / maxTokens) * 0.75);
-                    const particleSize = 2 + (tokens / maxTokens) * 2;
-                    
-                    if (Math.random() < flowRate) {
-                        const burstCount = Math.ceil(1 + (tokens / maxTokens) * 2);
-                        for (let b = 0; b < burstCount; b++) {
-                            setTimeout(() => {
-                                if (flow.input_tokens > 0) spawnParticleWithSize(ci, subIdx, true, particleSize);
-                                setTimeout(() => {
-                                    if (flow.output_tokens > 0) spawnParticleWithSize(ci, subIdx, false, particleSize * 0.8);
-                                }, 150 + Math.random() * 200);
-                            }, b * 80);
-                        }
-                    }
-                });
-            }).catch(() => {
-                fetch('/admin/clients').then(r => r.json()).then(clientData => {
-                    flowClients = clientData.clients.map(c => c.client_id).slice(0, 4);
-                    flowSubs = clientData.live.subscriptions.map(s => s.name);
-                });
-            });
-        }
-        
-        function spawnParticleWithSize(clientIdx, subIdx, isInput, size) {
-            const rect = flowCanvas.getBoundingClientRect();
-            const w = rect.width;
-            const h = rect.height;
-            const centerX = w / 2;
-            const centerY = h / 2;
-            
-            const clientY = 25 + clientIdx * 40;
-            const subY = 25 + subIdx * 45;
-            
-            const startX = isInput ? 60 : centerX;
-            const startY = isInput ? clientY : centerY;
-            const endX = isInput ? centerX : w - 60;
-            const endY = isInput ? centerY : subY;
-            
-            const color = isInput ? 'rgba(34, 211, 238, 1)' : 'rgba(192, 132, 252, 1)';
-            flowParticles.push(new FlowParticle(startX, startY, endX, endY, color, size));
+            }).catch(()=>{});
         }
 
-        function drawFlowViz() {
-            const rect = flowCanvas.getBoundingClientRect();
-            const w = rect.width;
-            const h = rect.height;
-            const centerX = w / 2;
-            const centerY = h / 2;
-            
-            flowCtx.clearRect(0, 0, w, h);
-            
+        function drawFlow() {
+            const r = flowCanvas.getBoundingClientRect(), w=r.width, h=r.height, cx=w/2, cy=h/2;
+            flowCtx.clearRect(0,0,w,h);
+            flowCtx.strokeStyle = 'rgba(42,46,58,0.4)'; flowCtx.lineWidth = 1;
             // Connection lines
-            flowCtx.strokeStyle = 'rgba(42, 46, 58, 0.4)';
-            flowCtx.lineWidth = 1;
-            
-            flowClients.forEach((client, i) => {
-                const y = 25 + i * 40;
-                flowCtx.beginPath();
-                flowCtx.moveTo(60, y);
-                flowCtx.quadraticCurveTo(centerX - 30, y, centerX, centerY);
-                flowCtx.stroke();
+            flowClients.forEach((c,i) => { const y=18+i*30; flowCtx.beginPath(); flowCtx.moveTo(70,y); flowCtx.quadraticCurveTo(cx-40,y,cx,cy); flowCtx.stroke(); });
+            flowSubs.forEach((s,i) => { const y=18+i*35; flowCtx.beginPath(); flowCtx.moveTo(cx,cy); flowCtx.quadraticCurveTo(cx+40,y,w-70,y); flowCtx.stroke(); });
+            // Client boxes - BIGGER, pulse green if active
+            flowClients.forEach((c,i) => { 
+                const y=18+i*30;
+                const isActive = activeClients[c];
+                // Glow effect for active clients
+                if (isActive) {
+                    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+                    flowCtx.shadowColor = '#22c55e';
+                    flowCtx.shadowBlur = 8 + pulse * 8;
+                }
+                flowCtx.fillStyle='#1a1d27'; 
+                flowCtx.strokeStyle = isActive ? '#22c55e' : clientColors[i]; 
+                flowCtx.lineWidth = isActive ? 2.5 : 2; 
+                flowCtx.beginPath(); flowCtx.roundRect(5,y-12,65,24,4); flowCtx.fill(); flowCtx.stroke(); 
+                flowCtx.shadowBlur = 0;
+                flowCtx.fillStyle = isActive ? '#22c55e' : '#e4e4e7'; 
+                flowCtx.font = isActive ? 'bold 11px monospace' : '11px monospace'; 
+                flowCtx.textAlign='center'; flowCtx.fillText(c.slice(0,7),37,y+4); 
             });
-            
-            flowSubs.forEach((sub, i) => {
-                const y = 25 + i * 45;
-                flowCtx.beginPath();
-                flowCtx.moveTo(centerX, centerY);
-                flowCtx.quadraticCurveTo(centerX + 30, y, w - 60, y);
-                flowCtx.stroke();
+            // Load balancer - SMALLER
+            const grad = flowCtx.createRadialGradient(cx,cy,0,cx,cy,18); grad.addColorStop(0,'rgba(59,130,246,0.25)'); grad.addColorStop(1,'rgba(59,130,246,0)');
+            flowCtx.fillStyle=grad; flowCtx.beginPath(); flowCtx.arc(cx,cy,18,0,Math.PI*2); flowCtx.fill();
+            flowCtx.fillStyle='#1a1d27'; flowCtx.strokeStyle='#3b82f6'; flowCtx.lineWidth=2; flowCtx.beginPath(); flowCtx.arc(cx,cy,14,0,Math.PI*2); flowCtx.fill(); flowCtx.stroke();
+            flowCtx.fillStyle='#e4e4e7'; flowCtx.font='bold 9px sans-serif'; flowCtx.textAlign='center'; flowCtx.fillText('LB',cx,cy+3);
+            // Subscription boxes - BIGGER
+            flowSubs.forEach((s,i) => { 
+                const y=18+i*35, color=subColors[s]||'#666'; 
+                flowCtx.fillStyle='#1a1d27'; flowCtx.strokeStyle=color; flowCtx.lineWidth=2; 
+                flowCtx.beginPath(); flowCtx.roundRect(w-70,y-14,65,28,4); flowCtx.fill(); flowCtx.stroke(); 
+                flowCtx.fillStyle='#e4e4e7'; flowCtx.font='bold 12px monospace'; flowCtx.textAlign='center'; flowCtx.fillText(s.toUpperCase(),w-37,y+5); 
             });
-            
-            // Clients
-            flowClients.forEach((client, i) => {
-                const y = 25 + i * 40;
-                flowCtx.fillStyle = '#1a1d27';
-                flowCtx.strokeStyle = clientColors[i % clientColors.length];
-                flowCtx.lineWidth = 1.5;
-                flowCtx.beginPath();
-                flowCtx.roundRect(5, y - 10, 55, 20, 4);
-                flowCtx.fill();
-                flowCtx.stroke();
-                flowCtx.fillStyle = '#e4e4e7';
-                flowCtx.font = '9px monospace';
-                flowCtx.textAlign = 'center';
-                flowCtx.fillText(client.slice(0, 7), 32, y + 3);
-            });
-            
-            // Load balancer
-            const lbGrad = flowCtx.createRadialGradient(centerX, centerY, 0, centerX, centerY, 35);
-            lbGrad.addColorStop(0, 'rgba(59, 130, 246, 0.2)');
-            lbGrad.addColorStop(1, 'rgba(59, 130, 246, 0)');
-            flowCtx.fillStyle = lbGrad;
-            flowCtx.beginPath();
-            flowCtx.arc(centerX, centerY, 35, 0, Math.PI * 2);
-            flowCtx.fill();
-            
-            flowCtx.fillStyle = '#1a1d27';
-            flowCtx.strokeStyle = '#3b82f6';
-            flowCtx.lineWidth = 1.5;
-            flowCtx.beginPath();
-            flowCtx.arc(centerX, centerY, 25, 0, Math.PI * 2);
-            flowCtx.fill();
-            flowCtx.stroke();
-            flowCtx.fillStyle = '#e4e4e7';
-            flowCtx.font = 'bold 8px sans-serif';
-            flowCtx.textAlign = 'center';
-            flowCtx.fillText('LOAD', centerX, centerY - 2);
-            flowCtx.fillText('BALANCER', centerX, centerY + 7);
-            
-            // Subscriptions
-            flowSubs.forEach((sub, i) => {
-                const y = 25 + i * 45;
-                const color = subColors[sub] || '#666';
-                flowCtx.fillStyle = '#1a1d27';
-                flowCtx.strokeStyle = color;
-                flowCtx.lineWidth = 1.5;
-                flowCtx.beginPath();
-                flowCtx.roundRect(w - 60, y - 12, 55, 24, 4);
-                flowCtx.fill();
-                flowCtx.stroke();
-                flowCtx.fillStyle = '#e4e4e7';
-                flowCtx.font = 'bold 10px monospace';
-                flowCtx.textAlign = 'center';
-                flowCtx.fillText(sub.toUpperCase(), w - 32, y + 4);
-            });
-            
-            // Particles
-            flowParticles = flowParticles.filter(p => {
-                const alive = p.update();
-                p.draw(flowCtx);
-                return alive;
-            });
+            // Draw particles
+            flowParticles = flowParticles.filter(p => { const alive = p.update(); p.draw(flowCtx); return alive; });
         }
 
-        function animateFlow() {
-            drawFlowViz();
-            requestAnimationFrame(animateFlow);
-        }
-        
-        // Initialize
-        fetchClients();
-        fetchUsage();
-        fetchLimits();
-        fetchProfiles();
-        updateFlowData();
+        function animate() { drawFlow(); requestAnimationFrame(animate); }
 
-        setInterval(fetchClients, 5000);
-        setInterval(fetchUsage, 30000);
-        setInterval(fetchLimits, 60000);
-        setInterval(fetchProfiles, 60000);
-        setInterval(updateFlowData, 3000);
-        animateFlow();
+        fetchClients(); fetchUsage(); fetchLimits(); fetchProfiles(); updateFlowData();
+        setInterval(fetchClients, 5000); setInterval(fetchUsage, 30000); setInterval(fetchLimits, 60000); setInterval(fetchProfiles, 60000); setInterval(updateFlowData, 1500);
+        animate();
     </script>
 </body>
 </html>
