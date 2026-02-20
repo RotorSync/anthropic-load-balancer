@@ -120,18 +120,77 @@ uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 1
 
 ### Configure OpenClaw
 
-In your OpenClaw config, set:
+OpenClaw needs two things: the load balancer URL and a client ID for tracking.
 
-```yaml
-anthropic:
-  baseUrl: http://192.168.68.181:8080
+#### Basic Setup (LAN)
+
+Edit `~/.openclaw/openclaw.json`:
+
+```json
+{
+  "anthropic": {
+    "baseUrl": "http://192.168.68.181:8080",
+    "headers": {
+      "X-Client-ID": "your-bot-name"
+    }
+  }
+}
 ```
 
-Or via environment variable:
+The `X-Client-ID` header identifies your bot in the dashboard. Use a short, descriptive name like `echo`, `forge`, `jarvis`, etc.
+
+#### External Access (via Cloudflare Tunnel)
+
+For bots outside your LAN (e.g., remote deployments), use the tunnel endpoint with Cloudflare Access authentication:
+
+```json
+{
+  "anthropic": {
+    "baseUrl": "https://api.rotorsync.com",
+    "headers": {
+      "X-Client-ID": "conrad",
+      "CF-Access-Client-Id": "<service-token-id>",
+      "CF-Access-Client-Secret": "<service-token-secret>"
+    }
+  }
+}
+```
+
+To get Cloudflare Service Token credentials:
+1. Go to Cloudflare Zero Trust → Access → Service Auth
+2. Create a new Service Token
+3. Copy the Client ID and Client Secret
+
+#### Environment Variable Alternative
+
+You can also set the base URL via environment variable:
 
 ```bash
 export ANTHROPIC_BASE_URL=http://192.168.68.181:8080
 ```
+
+Note: Headers must be configured in `openclaw.json` — they can't be set via environment variables.
+
+#### Verifying Your Setup
+
+After configuring, check that your bot appears in the dashboard:
+
+1. Send a message to your bot (trigger an API call)
+2. Open http://192.168.68.181:8080/admin/dashboard
+3. Your bot should appear in the "Clients" table with request/token counts
+
+#### Multiple Bots Example
+
+Here's a complete setup for multiple OpenClaw instances:
+
+| Bot | Config Location | X-Client-ID |
+|-----|-----------------|-------------|
+| Echo | `austin-laptop:~/.openclaw/openclaw.json` | `echo` |
+| Forge | `aliyan-mac:~/.openclaw/openclaw.json` | `forge` |
+| Jarvis | `norman-pi:~/.openclaw/openclaw.json` | `jarvis` |
+| Conrad | Remote via tunnel | `conrad` |
+
+Each bot uses the same load balancer but is tracked separately in the dashboard.
 
 ## API Endpoints
 
