@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from .config import load_config, Config, reload_config
 from .tracker import SubscriptionTracker
 from .proxy import AnthropicProxy
+from .storage import UsageStorage
 
 # Configure logging
 def setup_logging(config: Config):
@@ -72,13 +73,14 @@ def is_localhost(request: Request) -> bool:
 config: Config | None = None
 tracker: SubscriptionTracker | None = None
 proxy: AnthropicProxy | None = None
+storage: UsageStorage | None = None
 config_path: Path | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global config, tracker, proxy, config_path
+    global config, tracker, proxy, storage, config_path
     
     # Startup
     logger = logging.getLogger(__name__)
@@ -113,8 +115,11 @@ async def lifespan(app: FastAPI):
         cooldown_seconds=config.rate_limit.cooldown_seconds,
     )
     
+    # Initialize storage
+    storage = UsageStorage()
+    
     # Initialize proxy
-    proxy = AnthropicProxy(tracker=tracker)
+    proxy = AnthropicProxy(tracker=tracker, storage=storage)
     await proxy.startup()
     
     # Log subscription info (names only, not tokens!)
@@ -208,6 +213,79 @@ async def admin_reload(request: Request):
         raise HTTPException(status_code=500, detail=f"Failed to reload: {str(e)}")
 
 
+@app.get("/admin/clients")
+async def admin_clients(request: Request):
+    """Get all known clients with stats. Localhost only."""
+    if not is_localhost(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+    
+    if storage is None:
+        return JSONResponse({"error": "Storage not initialized"}, status_code=503)
+    
+    clients = await storage.get_clients()
+    
+    # Also get live connection info from tracker
+    live_status = await tracker.get_status_safe() if tracker else {"subscriptions": []}
+    
+    return {
+        "clients": [
+            {
+                "client_id": c.client_id,
+                "total_requests": c.total_requests,
+                "total_input_tokens": c.total_input_tokens,
+                "total_output_tokens": c.total_output_tokens,
+                "total_tokens": c.total_input_tokens + c.total_output_tokens,
+                "last_seen": c.last_seen.isoformat(),
+            }
+            for c in clients
+        ],
+        "live": live_status,
+        "timestamp": datetime.utcnow().isoformat(),
+    }
+
+
+@app.get("/admin/usage")
+async def admin_usage(request: Request, period: str = "day"):
+    """Get usage statistics. Localhost only."""
+    if not is_localhost(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+    
+    if storage is None:
+        return JSONResponse({"error": "Storage not initialized"}, status_code=503)
+    
+    if period not in ("day", "week", "month"):
+        raise HTTPException(status_code=400, detail="Period must be day, week, or month")
+    
+    usage = await storage.get_usage(period)
+    
+    return {
+        "period": usage.period,
+        "start": usage.start_time.isoformat(),
+        "end": usage.end_time.isoformat(),
+        "total_requests": usage.total_requests,
+        "total_input_tokens": usage.total_input_tokens,
+        "total_output_tokens": usage.total_output_tokens,
+        "total_tokens": usage.total_input_tokens + usage.total_output_tokens,
+        "by_client": usage.by_client,
+        "by_subscription": usage.by_subscription,
+    }
+
+
+@app.get("/admin/client/{client_id}")
+async def admin_client_detail(request: Request, client_id: str, period: str = "day"):
+    """Get detailed usage for a specific client. Localhost only."""
+    if not is_localhost(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+    
+    if storage is None:
+        return JSONResponse({"error": "Storage not initialized"}, status_code=503)
+    
+    if period not in ("day", "week", "month"):
+        raise HTTPException(status_code=400, detail="Period must be day, week, or month")
+    
+    return await storage.get_client_usage(client_id, period)
+
+
 @app.get("/")
 async def root():
     """Root endpoint with basic info."""
@@ -217,6 +295,8 @@ async def root():
         "endpoints": {
             "health": "/health",
             "status": "/status (localhost only)",
+            "clients": "/admin/clients (localhost only)",
+            "usage": "/admin/usage?period=day|week|month (localhost only)",
             "reload": "/admin/reload (localhost only)",
             "proxy": "/v1/*",
         },

@@ -4,13 +4,17 @@ HTTP proxy logic for forwarding requests to Anthropic API.
 import json
 import logging
 import secrets
-from typing import AsyncIterator
+import time
+from typing import AsyncIterator, Optional, TYPE_CHECKING
 
 import httpx
 from fastapi import Request, Response
 from fastapi.responses import StreamingResponse
 
 from .tracker import SubscriptionTracker, SubscriptionState
+
+if TYPE_CHECKING:
+    from .storage import UsageStorage
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +49,53 @@ def _generate_request_id() -> str:
     return secrets.token_hex(4)
 
 
+def _extract_client_id(request: Request) -> str:
+    """Extract client ID from request headers or fall back to IP."""
+    # Prefer explicit client ID header
+    client_id = request.headers.get("x-client-id") or request.headers.get("x-bot-id")
+    if client_id:
+        return client_id
+    
+    # Fall back to IP address
+    if request.client:
+        return request.client.host
+    
+    return "unknown"
+
+
+def _extract_usage_from_response(body: bytes) -> tuple[int, int, str]:
+    """
+    Extract token usage from Anthropic response body.
+    
+    Returns:
+        (input_tokens, output_tokens, model)
+    """
+    try:
+        data = json.loads(body)
+        usage = data.get("usage", {})
+        return (
+            usage.get("input_tokens", 0),
+            usage.get("output_tokens", 0),
+            data.get("model", ""),
+        )
+    except (json.JSONDecodeError, UnicodeDecodeError):
+        return (0, 0, "")
+
+
 class AnthropicProxy:
     """
     Proxies requests to Anthropic API with load balancing.
     """
     
-    def __init__(self, tracker: SubscriptionTracker, timeout: float = 300.0):
+    def __init__(
+        self, 
+        tracker: SubscriptionTracker, 
+        timeout: float = 300.0,
+        storage: Optional["UsageStorage"] = None,
+    ):
         self.tracker = tracker
         self.timeout = timeout
+        self.storage = storage
         self._client: httpx.AsyncClient | None = None
     
     async def startup(self):
@@ -117,24 +160,84 @@ class AnthropicProxy:
         except (json.JSONDecodeError, UnicodeDecodeError):
             return False
     
+    async def _record_usage(
+        self,
+        client_id: str,
+        subscription: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        status_code: int,
+        latency_ms: int,
+    ):
+        """Record request usage to storage if available."""
+        if self.storage:
+            try:
+                await self.storage.record_request(
+                    client_id=client_id,
+                    subscription=subscription,
+                    model=model,
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    status_code=status_code,
+                    latency_ms=latency_ms,
+                )
+            except Exception as e:
+                logger.warning(f"Failed to record usage: {e}")
+    
     async def _stream_response(
         self,
         response: httpx.Response,
         subscription: SubscriptionState,
         request_id: str,
+        client_id: str,
+        start_time: float,
     ) -> AsyncIterator[bytes]:
-        """Stream response chunks to the client."""
+        """Stream response chunks to the client, tracking usage at end."""
+        chunks = []
         try:
             async for chunk in response.aiter_bytes():
+                chunks.append(chunk)
                 yield chunk
         except httpx.StreamClosed:
-            # Client disconnected - this is normal
             logger.debug(f"[{request_id}] Stream closed by client")
         except Exception as e:
             logger.error(f"[{request_id}] Error streaming from {subscription.name}: {e}")
             raise
         finally:
             await response.aclose()
+            
+            # Extract usage from collected chunks (SSE format)
+            # The last data chunk should contain the final message with usage
+            full_response = b"".join(chunks)
+            input_tokens, output_tokens, model = 0, 0, ""
+            
+            # Parse SSE events looking for message_stop with usage
+            for line in full_response.split(b"\n"):
+                if line.startswith(b"data: "):
+                    try:
+                        data = json.loads(line[6:])
+                        if data.get("type") == "message_delta":
+                            usage = data.get("usage", {})
+                            output_tokens = usage.get("output_tokens", output_tokens)
+                        elif data.get("type") == "message_start":
+                            msg = data.get("message", {})
+                            model = msg.get("model", "")
+                            usage = msg.get("usage", {})
+                            input_tokens = usage.get("input_tokens", 0)
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        pass
+            
+            latency_ms = int((time.time() - start_time) * 1000)
+            await self._record_usage(
+                client_id=client_id,
+                subscription=subscription.name,
+                model=model,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                status_code=response.status_code,
+                latency_ms=latency_ms,
+            )
     
     async def proxy_request(self, request: Request, path: str) -> Response:
         """
@@ -148,6 +251,8 @@ class AnthropicProxy:
             Response to send to the client.
         """
         request_id = _generate_request_id()
+        client_id = _extract_client_id(request)
+        start_time = time.time()
         
         # Build the upstream URL
         url = f"{ANTHROPIC_BASE_URL}{path}"
@@ -221,10 +326,10 @@ class AnthropicProxy:
                             media_type="application/json",
                         )
                     
-                    logger.info(f"[{request_id}] <- {subscription.name} {response.status_code}")
+                    logger.info(f"[{request_id}] <- {subscription.name} {response.status_code} (client: {client_id})")
                     
                     return StreamingResponse(
-                        self._stream_response(response, subscription, request_id),
+                        self._stream_response(response, subscription, request_id, client_id, start_time),
                         status_code=response.status_code,
                         headers=self._filter_response_headers(response.headers),
                         media_type=response.headers.get("content-type", "text/event-stream"),
@@ -290,7 +395,21 @@ class AnthropicProxy:
                     if response.status_code >= 500:
                         await self.tracker.record_error(subscription)
                     
-                    logger.info(f"[{request_id}] <- {subscription.name} {response.status_code}")
+                    # Extract and record usage
+                    input_tokens, output_tokens, model = _extract_usage_from_response(response.content)
+                    latency_ms = int((time.time() - start_time) * 1000)
+                    
+                    await self._record_usage(
+                        client_id=client_id,
+                        subscription=subscription.name,
+                        model=model,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        status_code=response.status_code,
+                        latency_ms=latency_ms,
+                    )
+                    
+                    logger.info(f"[{request_id}] <- {subscription.name} {response.status_code} (client: {client_id}, tokens: {input_tokens}+{output_tokens})")
                     
                     return Response(
                         content=response.content,
