@@ -425,7 +425,7 @@
 
         async function fetchLimits() {
             try {
-                const res = await fetch('http://192.168.68.181:5050/api/usage');
+                const res = await fetch('/admin/limits');
                 const data = await res.json();
                 
                 const accounts = data.accounts || [];

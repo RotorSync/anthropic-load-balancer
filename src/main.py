@@ -297,10 +297,25 @@ async def admin_client_detail(request: Request, client_id: str, period: str = "d
     return await storage.get_client_usage(client_id, period)
 
 
+@app.get("/admin/limits")
+async def admin_limits(request: Request):
+    """Proxy to the usage API for account limits. Localhost only."""
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+    
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get("http://localhost:5050/api/usage")
+            return JSONResponse(response.json())
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=502)
+
+
 @app.get("/admin/dashboard")
 async def admin_dashboard(request: Request):
     """Serve the dashboard UI. Localhost only."""
-    if not is_localhost(request):
+    if not is_local_network(request):
         raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
     
     dashboard_path = Path(__file__).parent / "static" / "dashboard.html"
