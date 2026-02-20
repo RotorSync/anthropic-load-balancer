@@ -25,7 +25,11 @@
         }
     </script>
     <style>
-        body { background: #0f1117; }
+        html, body { 
+            background: #0f1117; 
+            height: 100%;
+            overflow-x: hidden;
+        }
         .glow-green { box-shadow: 0 0 10px rgba(34, 197, 94, 0.3); }
         .glow-amber { box-shadow: 0 0 10px rgba(245, 158, 11, 0.3); }
         .glow-red { box-shadow: 0 0 10px rgba(239, 68, 68, 0.3); }
@@ -36,10 +40,10 @@
         .pulse-dot { animation: pulse-dot 2s infinite; }
     </style>
 </head>
-<body class="text-dark-text min-h-screen p-6">
+<body class="text-dark-text p-6">
     <div class="max-w-7xl mx-auto">
         <!-- Header -->
-        <div class="flex items-center justify-between mb-8">
+        <div class="flex items-center justify-between mb-6">
             <div>
                 <h1 class="text-2xl font-bold">Anthropic Load Balancer</h1>
                 <p class="text-dark-muted text-sm">192.168.68.181:8080</p>
@@ -47,36 +51,45 @@
             <div class="flex items-center gap-2">
                 <span id="status-dot" class="w-3 h-3 rounded-full bg-green-500 pulse-dot"></span>
                 <span id="status-text" class="text-sm text-dark-muted">Connected</span>
+                <span class="text-dark-muted text-sm ml-4">Updated: <span id="last-updated">—</span></span>
             </div>
         </div>
 
-        <!-- Capacity Overview -->
-        <div class="grid grid-cols-4 gap-4 mb-8">
+        <!-- Stats Overview -->
+        <div class="grid grid-cols-6 gap-4 mb-6">
             <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
-                <div class="text-dark-muted text-sm mb-1">Total Capacity</div>
-                <div id="total-capacity" class="text-3xl font-bold">20</div>
+                <div class="text-dark-muted text-xs mb-1">Capacity</div>
+                <div id="total-capacity" class="text-2xl font-bold">20</div>
             </div>
             <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
-                <div class="text-dark-muted text-sm mb-1">Active Now</div>
-                <div id="active-now" class="text-3xl font-bold text-amber-500">0</div>
+                <div class="text-dark-muted text-xs mb-1">Active</div>
+                <div id="active-now" class="text-2xl font-bold text-amber-500">0</div>
             </div>
             <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
-                <div class="text-dark-muted text-sm mb-1">Available</div>
-                <div id="available" class="text-3xl font-bold text-green-500">20</div>
+                <div class="text-dark-muted text-xs mb-1">Available</div>
+                <div id="available" class="text-2xl font-bold text-green-500">20</div>
             </div>
             <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
-                <div class="text-dark-muted text-sm mb-1">Requests Today</div>
-                <div id="requests-today" class="text-3xl font-bold">0</div>
+                <div class="text-dark-muted text-xs mb-1">Requests Today</div>
+                <div id="requests-today" class="text-2xl font-bold">0</div>
+            </div>
+            <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
+                <div class="text-dark-muted text-xs mb-1">Tokens Today</div>
+                <div id="tokens-today" class="text-2xl font-bold text-blue-400">0</div>
+            </div>
+            <div class="bg-dark-card rounded-lg p-4 border border-dark-border">
+                <div class="text-dark-muted text-xs mb-1">Tokens This Week</div>
+                <div id="tokens-week" class="text-2xl font-bold text-purple-400">0</div>
             </div>
         </div>
 
         <div class="grid grid-cols-3 gap-6">
-            <!-- Left Column: Subscriptions & Active Clients -->
+            <!-- Left Column: Subscriptions & Clients -->
             <div class="col-span-2 space-y-6">
                 <!-- Subscriptions -->
                 <div class="bg-dark-card rounded-lg border border-dark-border">
-                    <div class="p-4 border-b border-dark-border">
-                        <h2 class="font-semibold">Subscriptions</h2>
+                    <div class="p-3 border-b border-dark-border">
+                        <h2 class="font-semibold text-sm">Subscriptions</h2>
                     </div>
                     <div class="p-4">
                         <div id="subscriptions" class="space-y-3">
@@ -85,26 +98,27 @@
                     </div>
                 </div>
 
-                <!-- Active Clients -->
+                <!-- Clients -->
                 <div class="bg-dark-card rounded-lg border border-dark-border">
-                    <div class="p-4 border-b border-dark-border">
-                        <h2 class="font-semibold">Clients</h2>
+                    <div class="p-3 border-b border-dark-border">
+                        <h2 class="font-semibold text-sm">Clients</h2>
                     </div>
-                    <div class="p-4">
+                    <div class="p-4 max-h-64 overflow-y-auto">
                         <table class="w-full">
                             <thead>
-                                <tr class="text-dark-muted text-sm text-left">
-                                    <th class="pb-3">Client</th>
-                                    <th class="pb-3">Last Subscription</th>
-                                    <th class="pb-3">Requests</th>
-                                    <th class="pb-3">Tokens (Day)</th>
-                                    <th class="pb-3">Last Seen</th>
+                                <tr class="text-dark-muted text-xs text-left">
+                                    <th class="pb-2">Client</th>
+                                    <th class="pb-2">Subscription</th>
+                                    <th class="pb-2">Requests</th>
+                                    <th class="pb-2">Tokens (Day)</th>
+                                    <th class="pb-2">Tokens (Week)</th>
+                                    <th class="pb-2">Last Seen</th>
                                 </tr>
                             </thead>
-                            <tbody id="clients-table">
+                            <tbody id="clients-table" class="text-sm">
                                 <tr>
-                                    <td colspan="5" class="text-dark-muted text-center py-8">
-                                        No clients yet. Configure bots with X-Client-ID header.
+                                    <td colspan="6" class="text-dark-muted text-center py-6">
+                                        No clients yet
                                     </td>
                                 </tr>
                             </tbody>
@@ -113,44 +127,53 @@
                 </div>
             </div>
 
-            <!-- Right Column: Usage Chart -->
+            <!-- Right Column: Usage -->
             <div class="space-y-6">
-                <!-- Period Selector -->
+                <!-- Chart -->
                 <div class="bg-dark-card rounded-lg border border-dark-border">
-                    <div class="p-4 border-b border-dark-border flex items-center justify-between">
-                        <h2 class="font-semibold">Token Usage</h2>
+                    <div class="p-3 border-b border-dark-border flex items-center justify-between">
+                        <h2 class="font-semibold text-sm">Token Usage</h2>
                         <div class="flex gap-1">
-                            <button onclick="setPeriod('day')" id="btn-day" class="px-3 py-1 text-sm rounded bg-dark-border">Day</button>
-                            <button onclick="setPeriod('week')" id="btn-week" class="px-3 py-1 text-sm rounded bg-blue-600">Week</button>
-                            <button onclick="setPeriod('month')" id="btn-month" class="px-3 py-1 text-sm rounded bg-dark-border">Month</button>
+                            <button onclick="setPeriod('day')" id="btn-day" class="px-2 py-0.5 text-xs rounded bg-dark-border">Day</button>
+                            <button onclick="setPeriod('week')" id="btn-week" class="px-2 py-0.5 text-xs rounded bg-blue-600">Week</button>
+                            <button onclick="setPeriod('month')" id="btn-month" class="px-2 py-0.5 text-xs rounded bg-dark-border">Month</button>
                         </div>
                     </div>
                     <div class="p-4">
-                        <canvas id="usage-chart" height="200"></canvas>
-                        <div id="usage-total" class="text-center mt-4">
-                            <span class="text-3xl font-bold">0</span>
-                            <span class="text-dark-muted ml-1">tokens</span>
+                        <div style="height: 180px;">
+                            <canvas id="usage-chart"></canvas>
+                        </div>
+                        <div id="usage-total" class="text-center mt-3">
+                            <span class="text-2xl font-bold">0</span>
+                            <span class="text-dark-muted text-sm ml-1">tokens</span>
                         </div>
                     </div>
                 </div>
 
                 <!-- By Subscription -->
                 <div class="bg-dark-card rounded-lg border border-dark-border">
-                    <div class="p-4 border-b border-dark-border">
-                        <h2 class="font-semibold">By Subscription</h2>
+                    <div class="p-3 border-b border-dark-border">
+                        <h2 class="font-semibold text-sm">By Subscription</h2>
                     </div>
                     <div class="p-4">
-                        <div id="usage-by-sub" class="space-y-3">
+                        <div id="usage-by-sub" class="space-y-2">
+                            <!-- Populated by JS -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- By Client -->
+                <div class="bg-dark-card rounded-lg border border-dark-border">
+                    <div class="p-3 border-b border-dark-border">
+                        <h2 class="font-semibold text-sm">By Client</h2>
+                    </div>
+                    <div class="p-4">
+                        <div id="usage-by-client" class="space-y-2">
                             <!-- Populated by JS -->
                         </div>
                     </div>
                 </div>
             </div>
-        </div>
-
-        <!-- Footer -->
-        <div class="mt-8 text-center text-dark-muted text-sm">
-            Last updated: <span id="last-updated">—</span>
         </div>
     </div>
 
@@ -163,6 +186,7 @@
             'norm': '#f59e0b',
             'headings2': '#8b5cf6'
         };
+        const clientColors = ['#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'];
 
         function formatNumber(n) {
             if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
@@ -185,8 +209,8 @@
             currentPeriod = p;
             document.querySelectorAll('[id^="btn-"]').forEach(b => {
                 b.className = b.id === 'btn-' + p 
-                    ? 'px-3 py-1 text-sm rounded bg-blue-600'
-                    : 'px-3 py-1 text-sm rounded bg-dark-border';
+                    ? 'px-2 py-0.5 text-xs rounded bg-blue-600'
+                    : 'px-2 py-0.5 text-xs rounded bg-dark-border';
             });
             fetchUsage();
         }
@@ -196,63 +220,64 @@
                 const res = await fetch('/admin/clients');
                 const data = await res.json();
                 
-                // Update capacity cards
                 const live = data.live;
                 document.getElementById('total-capacity').textContent = live.total_capacity;
                 document.getElementById('active-now').textContent = live.total_active;
                 document.getElementById('available').textContent = live.available_capacity;
                 
-                // Update subscriptions
+                // Subscriptions
                 const subsEl = document.getElementById('subscriptions');
                 subsEl.innerHTML = live.subscriptions.map(sub => {
                     const pct = (sub.active_connections / sub.max_concurrent) * 100;
                     const color = sub.in_cooldown ? 'bg-red-500' : 
                                   pct > 80 ? 'bg-amber-500' : 'bg-green-500';
                     return `
-                        <div class="flex items-center gap-4">
-                            <div class="w-20 font-mono text-sm">${sub.name}</div>
+                        <div class="flex items-center gap-3">
+                            <div class="w-16 font-mono text-sm">${sub.name}</div>
                             <div class="flex-1 bg-dark-border rounded-full h-2 overflow-hidden">
                                 <div class="${color} h-full transition-all" style="width: ${pct}%"></div>
                             </div>
-                            <div class="text-sm text-dark-muted w-16 text-right">
+                            <div class="text-xs text-dark-muted w-12 text-right">
                                 ${sub.active_connections}/${sub.max_concurrent}
                             </div>
-                            ${sub.in_cooldown ? '<span class="text-xs text-red-500">COOLDOWN</span>' : ''}
+                            <div class="text-xs text-dark-muted w-16 text-right">
+                                ${formatNumber(sub.total_requests)} req
+                            </div>
+                            ${sub.in_cooldown ? '<span class="text-xs text-red-500">⚠</span>' : ''}
                         </div>
                     `;
                 }).join('');
 
-                // Update clients table
+                // Clients table
                 const clientsEl = document.getElementById('clients-table');
                 if (data.clients.length === 0) {
-                    clientsEl.innerHTML = `
-                        <tr>
-                            <td colspan="5" class="text-dark-muted text-center py-8">
-                                No clients yet. Configure bots with X-Client-ID header.
-                            </td>
-                        </tr>
-                    `;
+                    clientsEl.innerHTML = `<tr><td colspan="6" class="text-dark-muted text-center py-6">No clients yet</td></tr>`;
                 } else {
                     clientsEl.innerHTML = data.clients.map(c => `
                         <tr class="border-t border-dark-border">
-                            <td class="py-3 font-mono">${c.client_id}</td>
-                            <td class="py-3">
-                                <span class="px-2 py-1 rounded text-xs" style="background: ${subColors[c.last_subscription] || '#666'}20; color: ${subColors[c.last_subscription] || '#666'}">
+                            <td class="py-2 font-mono">${c.client_id}</td>
+                            <td class="py-2">
+                                <span class="px-1.5 py-0.5 rounded text-xs" style="background: ${subColors[c.last_subscription] || '#666'}20; color: ${subColors[c.last_subscription] || '#666'}">
                                     ${c.last_subscription || '—'}
                                 </span>
                             </td>
-                            <td class="py-3">${formatNumber(c.total_requests)}</td>
-                            <td class="py-3">${formatNumber(c.tokens_today || 0)}</td>
-                            <td class="py-3 text-dark-muted text-sm">${formatTime(c.last_seen)}</td>
+                            <td class="py-2">${formatNumber(c.total_requests)}</td>
+                            <td class="py-2">${formatNumber(c.tokens_today || c.total_tokens || 0)}</td>
+                            <td class="py-2">${formatNumber(c.tokens_week || c.total_tokens || 0)}</td>
+                            <td class="py-2 text-dark-muted">${formatTime(c.last_seen)}</td>
                         </tr>
                     `).join('');
                 }
 
-                // Compute requests today
-                const requestsToday = data.clients.reduce((sum, c) => sum + (c.requests_today || 0), 0);
+                // Stats
+                const requestsToday = data.clients.reduce((sum, c) => sum + (c.requests_today || c.total_requests || 0), 0);
+                const tokensToday = data.clients.reduce((sum, c) => sum + (c.tokens_today || c.total_tokens || 0), 0);
                 document.getElementById('requests-today').textContent = formatNumber(requestsToday);
+                document.getElementById('tokens-today').textContent = formatNumber(tokensToday);
 
                 document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
+                document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-green-500 pulse-dot';
+                document.getElementById('status-text').textContent = 'Connected';
             } catch (e) {
                 console.error('Failed to fetch clients:', e);
                 document.getElementById('status-dot').className = 'w-3 h-3 rounded-full bg-red-500';
@@ -265,23 +290,30 @@
                 const res = await fetch(`/admin/usage?period=${currentPeriod}`);
                 const data = await res.json();
 
-                // Update total
                 const total = data.total_tokens || 0;
                 document.getElementById('usage-total').innerHTML = `
-                    <span class="text-3xl font-bold">${formatNumber(total)}</span>
-                    <span class="text-dark-muted ml-1">tokens</span>
+                    <span class="text-2xl font-bold">${formatNumber(total)}</span>
+                    <span class="text-dark-muted text-sm ml-1">tokens</span>
                 `;
 
-                // Update chart
+                // Update week tokens stat
+                if (currentPeriod === 'week') {
+                    document.getElementById('tokens-week').textContent = formatNumber(total);
+                }
+
+                // Chart
                 const ctx = document.getElementById('usage-chart').getContext('2d');
                 if (usageChart) usageChart.destroy();
                 
-                const labels = data.by_day?.map(d => d.date) || [];
+                const labels = data.by_day?.map(d => {
+                    const date = new Date(d.date);
+                    return date.toLocaleDateString('en-US', { weekday: 'short' });
+                }) || [];
                 const datasets = Object.keys(subColors).map(sub => ({
                     label: sub,
                     data: data.by_day?.map(d => d.by_subscription?.[sub] || 0) || [],
                     backgroundColor: subColors[sub],
-                    borderRadius: 4
+                    borderRadius: 2
                 }));
 
                 usageChart = new Chart(ctx, {
@@ -291,16 +323,14 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            x: { stacked: true, grid: { color: '#2a2e3a' }, ticks: { color: '#71717a' } },
-                            y: { stacked: true, grid: { color: '#2a2e3a' }, ticks: { color: '#71717a', callback: v => formatNumber(v) } }
+                            x: { stacked: true, grid: { display: false }, ticks: { color: '#71717a', font: { size: 10 } } },
+                            y: { stacked: true, grid: { color: '#2a2e3a' }, ticks: { color: '#71717a', font: { size: 10 }, callback: v => formatNumber(v) } }
                         },
-                        plugins: {
-                            legend: { display: false }
-                        }
+                        plugins: { legend: { display: false } }
                     }
                 });
 
-                // Update by-subscription breakdown
+                // By subscription
                 const bySubEl = document.getElementById('usage-by-sub');
                 const bySubData = data.by_subscription || {};
                 const maxSub = Math.max(...Object.values(bySubData), 1);
@@ -309,16 +339,39 @@
                     const pct = (val / maxSub) * 100;
                     return `
                         <div>
-                            <div class="flex justify-between text-sm mb-1">
+                            <div class="flex justify-between text-xs mb-1">
                                 <span>${sub}</span>
                                 <span class="text-dark-muted">${formatNumber(val)}</span>
                             </div>
-                            <div class="bg-dark-border rounded-full h-2 overflow-hidden">
+                            <div class="bg-dark-border rounded-full h-1.5 overflow-hidden">
                                 <div style="width: ${pct}%; background: ${color}" class="h-full"></div>
                             </div>
                         </div>
                     `;
                 }).join('');
+
+                // By client
+                const byClientEl = document.getElementById('usage-by-client');
+                const byClientData = data.by_client || {};
+                const clientEntries = Object.entries(byClientData).sort((a, b) => b[1] - a[1]);
+                const maxClient = clientEntries.length > 0 ? clientEntries[0][1] : 1;
+                byClientEl.innerHTML = clientEntries.length === 0 
+                    ? '<div class="text-dark-muted text-xs text-center py-2">No data</div>'
+                    : clientEntries.map(([client, val], i) => {
+                        const pct = (val / maxClient) * 100;
+                        const color = clientColors[i % clientColors.length];
+                        return `
+                            <div>
+                                <div class="flex justify-between text-xs mb-1">
+                                    <span class="font-mono">${client}</span>
+                                    <span class="text-dark-muted">${formatNumber(val)}</span>
+                                </div>
+                                <div class="bg-dark-border rounded-full h-1.5 overflow-hidden">
+                                    <div style="width: ${pct}%; background: ${color}" class="h-full"></div>
+                                </div>
+                            </div>
+                        `;
+                    }).join('');
 
             } catch (e) {
                 console.error('Failed to fetch usage:', e);
@@ -329,7 +382,7 @@
         fetchClients();
         fetchUsage();
 
-        // Auto-refresh every 5 seconds
+        // Auto-refresh
         setInterval(fetchClients, 5000);
         setInterval(fetchUsage, 30000);
     </script>
