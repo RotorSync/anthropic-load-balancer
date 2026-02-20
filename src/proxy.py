@@ -112,10 +112,88 @@ class AnthropicProxy:
             await self._client.aclose()
             logger.info("Proxy HTTP client closed")
     
-    def set_bot_profiles(self, profiles: dict):
-        """Set bot profiles for smart routing."""
-        self._bot_profiles = profiles
-        logger.debug(f"Updated bot profiles: {len(profiles)} bots")
+    async def _get_smart_routing_context(self, client_id: str) -> dict:
+        """
+        Gather data for smart routing decisions.
+        
+        Returns dict with bot_profile, subscription_rates, account_utilization.
+        """
+        context = {
+            "bot_profile": None,
+            "subscription_rates": {},
+            "account_utilization": {},
+        }
+        
+        if not self.storage:
+            return context
+        
+        try:
+            # Get bot profile
+            context["bot_profile"] = await self.storage.get_bot_profile(client_id)
+            
+            # Get recent request rates per subscription
+            for sub in self.tracker.subscriptions:
+                rate = await self.storage.get_subscription_request_rate(sub.name, minutes=1)
+                context["subscription_rates"][sub.name] = rate
+            
+            # Get account utilization for quota pacing
+            context["account_utilization"] = await self._fetch_account_utilization()
+        except Exception as e:
+            logger.warning(f"Failed to get smart routing context: {e}")
+        
+        return context
+    
+    async def _fetch_account_utilization(self) -> dict:
+        """
+        Fetch account utilization data for quota pacing.
+        
+        Returns dict mapping subscription name to utilization info:
+        {
+            "sub_name": {
+                "utilization_pct": 45.0,
+                "hours_to_reset": 120.5,
+            }
+        }
+        """
+        from datetime import datetime, timezone
+        
+        try:
+            # Fetch from local /admin/limits endpoint
+            response = await self.client.get("http://127.0.0.1:8080/admin/limits", timeout=2.0)
+            if response.status_code != 200:
+                return {}
+            
+            data = response.json()
+            accounts = data.get("accounts", [])
+            
+            utilization = {}
+            now = datetime.now(timezone.utc)
+            
+            for account in accounts:
+                account_id = account.get("id", "")
+                seven_day = account.get("seven_day", {})
+                
+                util_pct = seven_day.get("utilization", 0)
+                resets_at_str = seven_day.get("resets_at")
+                
+                hours_to_reset = 168  # Default to 7 days
+                if resets_at_str:
+                    try:
+                        resets_at = datetime.fromisoformat(resets_at_str.replace("Z", "+00:00"))
+                        delta = resets_at - now
+                        hours_to_reset = max(0, delta.total_seconds() / 3600)
+                    except (ValueError, TypeError):
+                        pass
+                
+                utilization[account_id] = {
+                    "utilization_pct": util_pct,
+                    "hours_to_reset": hours_to_reset,
+                }
+            
+            return utilization
+        except Exception as e:
+            logger.debug(f"Failed to fetch account utilization: {e}")
+            return {}
     
     @property
     def client(self) -> httpx.AsyncClient:
@@ -293,16 +371,16 @@ class AnthropicProxy:
         # Check if streaming
         is_streaming = self._is_streaming_request(body)
         
-        # Get bot classification for smart routing
-        bot_classification = None
-        if hasattr(self, '_bot_profiles') and client_id in self._bot_profiles:
-            bot_classification = self._bot_profiles[client_id].get("classification")
+        # Get smart routing context
+        routing_ctx = await self._get_smart_routing_context(client_id)
         
         # For streaming requests, no retry (can't replay partial streams)
         if is_streaming:
             subscription = await self.tracker.select_subscription(
                 client_id=client_id,
-                bot_classification=bot_classification
+                bot_profile=routing_ctx.get("bot_profile"),
+                subscription_rates=routing_ctx.get("subscription_rates"),
+                account_utilization=routing_ctx.get("account_utilization"),
             )
             if subscription is None:
                 logger.warning(f"[{request_id}] No subscriptions available")
@@ -372,7 +450,9 @@ class AnthropicProxy:
         for attempt in range(MAX_429_RETRIES + 1):
             subscription = await self.tracker.select_subscription(
                 client_id=client_id,
-                bot_classification=bot_classification
+                bot_profile=routing_ctx.get("bot_profile"),
+                subscription_rates=routing_ctx.get("subscription_rates"),
+                account_utilization=routing_ctx.get("account_utilization"),
             )
             
             if subscription is None:

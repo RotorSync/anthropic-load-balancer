@@ -94,54 +94,32 @@ class SubscriptionTracker:
         """Get a specific subscription by name."""
         return self._states.get(name)
     
-    def set_utilization_data(self, utilization: dict):
-        """
-        Set account utilization data from external source (usage API).
-        
-        Args:
-            utilization: dict of subscription_name -> {
-                "five_hour": {"utilization": float, "resets_at": str},
-                "seven_day": {"utilization": float, "resets_at": str}
-            }
-        """
-        self._utilization = utilization
-    
-    def _get_utilization_score(self, name: str) -> float:
-        """
-        Get a utilization score for a subscription (0-100, lower is better).
-        
-        Considers both 5-hour and 7-day utilization, weighted by reset time.
-        """
-        if not hasattr(self, '_utilization') or name not in self._utilization:
-            return 50.0  # Default mid-range if no data
-        
-        data = self._utilization[name]
-        five_hour = data.get("five_hour", {}).get("utilization", 50)
-        seven_day = data.get("seven_day", {}).get("utilization", 50)
-        
-        # Weight 5-hour more heavily since it resets sooner
-        return (five_hour * 0.7) + (seven_day * 0.3)
-    
     async def select_subscription(
-        self, 
+        self,
         client_id: Optional[str] = None,
-        bot_classification: Optional[str] = None
+        bot_profile: Optional[dict] = None,
+        subscription_rates: Optional[dict] = None,
+        account_utilization: Optional[dict] = None,
     ) -> Optional[SubscriptionState]:
         """
         Select the best subscription for a new request.
         
-        Selection criteria:
+        Basic selection criteria:
         1. Must be enabled
         2. Must not be at max capacity
         3. Must not be in cooldown
-        4. Smart scoring based on:
-           - Available capacity
-           - Account utilization (prefer lower utilization)
-           - Bot classification (spread heavy bots)
+        
+        Smart routing (when profile data provided):
+        4. Soft affinity - prefer bot's usual subscription
+        5. Spread heavy bots across subscriptions
+        6. Prefer subscriptions with more headroom
+        7. Consider account utilization and reset times
         
         Args:
-            client_id: Optional client identifier for logging
-            bot_classification: Optional "light", "medium", or "heavy"
+            client_id: The bot making the request
+            bot_profile: Bot's usage profile from storage.get_bot_profile()
+            subscription_rates: Recent request rates per subscription
+            account_utilization: Account utilization from tracker API
         
         Returns:
             Best subscription, or None if all are unavailable.
@@ -171,38 +149,99 @@ class SubscriptionTracker:
                 logger.warning("No subscriptions available!")
                 return None
             
-            # Smart scoring: lower score = better
-            def score_subscription(state: SubscriptionState) -> tuple:
-                # Base: utilization (0-100, lower better)
-                util_score = self._get_utilization_score(state.name)
-                
-                # Capacity score (0-100, lower better = more available)
-                capacity_score = 100 - (state.available_capacity / state.max_concurrent * 100)
-                
-                # Heavy bots should prefer less-utilized accounts
-                if bot_classification == "heavy":
-                    util_weight = 0.6
-                    capacity_weight = 0.3
-                else:
-                    util_weight = 0.4
-                    capacity_weight = 0.5
-                
-                priority_weight = 0.1
-                
-                final_score = (
-                    util_score * util_weight +
-                    capacity_score * capacity_weight +
-                    state.priority * priority_weight
+            # Simple routing if no profile data
+            if not bot_profile:
+                candidates.sort(key=lambda s: (-s.available_capacity, s.priority))
+                selected = candidates[0]
+                logger.debug(
+                    f"Selected {selected.name} (simple) "
+                    f"(capacity: {selected.available_capacity})"
                 )
-                
-                return (final_score, state.priority)
+                return selected
             
-            candidates.sort(key=score_subscription)
+            # Smart routing with profile data
+            def score_subscription(state: SubscriptionState) -> tuple:
+                """
+                Score a subscription for this bot. Higher is better.
+                Returns tuple for sorting (higher scores first).
+                
+                Quota Pacing Logic:
+                - Each subscription resets every 7 days
+                - Expected utilization = (days_elapsed / 7) * 100%
+                - Under-paced (actual < expected) → bonus score
+                - Over-paced (actual > expected) → penalty score
+                """
+                score = 0.0
+                
+                # Base score: available capacity (0-5 points)
+                score += state.available_capacity
+                
+                # Soft affinity: prefer bot's usual subscription (+3 points)
+                if bot_profile.get("preferred_subscription") == state.name:
+                    score += 3.0
+                
+                # QUOTA PACING: Balance usage across the 7-day window
+                if account_utilization and state.name in account_utilization:
+                    util = account_utilization[state.name]
+                    hours_to_reset = util.get("hours_to_reset", 168)  # Default to 7 days
+                    util_pct = util.get("utilization_pct", 0)
+                    
+                    # Calculate days elapsed in the 7-day window
+                    # hours_to_reset counts down from 168 (7 days) to 0
+                    hours_elapsed = max(0, 168 - hours_to_reset)
+                    days_elapsed = hours_elapsed / 24.0
+                    
+                    # Expected utilization at this point in the cycle
+                    expected_pct = (days_elapsed / 7.0) * 100.0
+                    
+                    # Pacing difference: positive = under-paced, negative = over-paced
+                    pacing_diff = expected_pct - util_pct
+                    
+                    # Scale pacing impact: each 10% difference = 1 point
+                    pacing_score = pacing_diff / 10.0
+                    
+                    # Cap the pacing bonus/penalty to avoid extreme swings
+                    pacing_score = max(-5.0, min(5.0, pacing_score))
+                    score += pacing_score
+                    
+                    logger.debug(
+                        f"Pacing {state.name}: {util_pct:.0f}% actual vs {expected_pct:.0f}% expected "
+                        f"({hours_to_reset:.0f}h to reset) → score {pacing_score:+.1f}"
+                    )
+                    
+                    # Additional penalty for heavy bots on high-utilization accounts
+                    if bot_profile.get("classification") == "heavy" and util_pct > 80:
+                        score -= 3.0  # Extra penalty for heavy bots on near-limit accounts
+                    
+                    # Bonus for accounts close to reset with low utilization
+                    # (use them up before they reset and waste capacity)
+                    if hours_to_reset < 12 and util_pct < 50:
+                        score += 2.0  # Push traffic to underutilized accounts near reset
+                        logger.debug(f"Near-reset bonus for {state.name}: +2.0")
+                
+                # Request rate penalty (avoid overwhelming one subscription)
+                if subscription_rates and state.name in subscription_rates:
+                    rate = subscription_rates[state.name]
+                    rpm = rate.get("requests_last_minute", 0)
+                    if rpm > 20:  # High request rate
+                        score -= 3.0
+                    elif rpm > 10:
+                        score -= 1.0
+                
+                # Priority tiebreaker (lower priority number = better)
+                priority_bonus = (10 - state.priority) / 10.0
+                score += priority_bonus
+                
+                return (score, -state.priority)
+            
+            # Sort by score (descending)
+            candidates.sort(key=score_subscription, reverse=True)
             
             selected = candidates[0]
-            logger.debug(
-                f"Selected {selected.name} "
-                f"(capacity: {selected.available_capacity}, priority: {selected.priority})"
+            logger.info(
+                f"Selected {selected.name} (smart) for {client_id or 'unknown'} "
+                f"[{bot_profile.get('classification', '?')}] "
+                f"(capacity: {selected.available_capacity})"
             )
             return selected
     
