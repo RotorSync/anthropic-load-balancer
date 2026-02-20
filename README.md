@@ -146,7 +146,7 @@ For bots outside your LAN (e.g., remote deployments), use the tunnel endpoint wi
 ```json
 {
   "anthropic": {
-    "baseUrl": "https://api.rotorsync.com",
+    "baseUrl": "https://ai.rotorsync.com",
     "headers": {
       "X-Client-ID": "conrad",
       "CF-Access-Client-Id": "<service-token-id>",
