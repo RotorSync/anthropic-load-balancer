@@ -209,16 +209,39 @@ All standard Anthropic API endpoints are proxied:
 
 ## Load Balancing Algorithm
 
+The load balancer uses smart routing based on bot usage profiles and subscription state.
+
+### Bot Classification
+
+Bots are automatically classified based on their average daily token usage:
+
+| Classification | Tokens/Day | Routing Behavior |
+|----------------|------------|------------------|
+| 🟢 Light | < 1,000 | Routes to any available subscription |
+| 🟡 Medium | 1,000 - 10,000 | Spread across subscriptions |
+| 🔴 Heavy | > 10,000 | Avoids high-utilization accounts |
+
+### Selection Algorithm
+
 1. **Filter** — Exclude subscriptions that are:
    - At max concurrent connections
    - In cooldown (recent 429)
    - Disabled
 
 2. **Score** — Remaining subscriptions scored by:
-   - Available capacity (max_concurrent - active_connections)
-   - Daily quota remaining (if tracker integration enabled)
+   - Available capacity (+1 point per slot)
+   - Bot affinity (+3 points if bot's preferred subscription)
+   - Account utilization (penalty for >80% utilized accounts with heavy bots)
+   - Reset timing (+2 points for underutilized accounts near reset)
+   - Request rate (penalty if >20 requests/minute)
 
-3. **Select** — Highest scoring subscription wins. Ties broken by priority.
+3. **Select** — Highest scoring subscription wins. Priority breaks ties.
+
+### Goals
+
+- **Spread heavy bots** — Prevents rate limiting from request spikes
+- **Maximize utilization** — Uses quota before it resets
+- **Soft affinity** — Bots prefer their usual subscription for consistency
 
 ## Monitoring
 
