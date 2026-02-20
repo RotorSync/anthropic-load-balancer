@@ -4,11 +4,12 @@ After=network.target
 
 [Service]
 Type=simple
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=/home/ubuntu/anthropic-load-balancer
-Environment="PATH=/home/ubuntu/anthropic-load-balancer/venv/bin:/usr/local/bin:/usr/bin:/bin"
-ExecStart=/home/ubuntu/anthropic-load-balancer/venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 1
+# Adjust User/Group and paths for your deployment
+User=user
+Group=user
+WorkingDirectory=/home/user/anthropic-load-balancer
+Environment="PATH=/home/user/anthropic-load-balancer/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/user/anthropic-load-balancer/venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 1
 Restart=always
 RestartSec=5
 
@@ -17,7 +18,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/ubuntu/anthropic-load-balancer
+ReadWritePaths=/home/user/anthropic-load-balancer
 
 # Logging
 StandardOutput=journal
