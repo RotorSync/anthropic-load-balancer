@@ -13,7 +13,8 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .config import load_config, Config, reload_config
 from .tracker import SubscriptionTracker
@@ -286,6 +287,19 @@ async def admin_client_detail(request: Request, client_id: str, period: str = "d
     return await storage.get_client_usage(client_id, period)
 
 
+@app.get("/admin/dashboard")
+async def admin_dashboard(request: Request):
+    """Serve the dashboard UI. Localhost only."""
+    if not is_localhost(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+    
+    dashboard_path = Path(__file__).parent / "static" / "dashboard.html"
+    if not dashboard_path.exists():
+        raise HTTPException(status_code=404, detail="Dashboard not found")
+    
+    return FileResponse(dashboard_path, media_type="text/html")
+
+
 @app.get("/")
 async def root():
     """Root endpoint with basic info."""
@@ -295,6 +309,7 @@ async def root():
         "endpoints": {
             "health": "/health",
             "status": "/status (localhost only)",
+            "dashboard": "/admin/dashboard (localhost only)",
             "clients": "/admin/clients (localhost only)",
             "usage": "/admin/usage?period=day|week|month (localhost only)",
             "reload": "/admin/reload (localhost only)",
