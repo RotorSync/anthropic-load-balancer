@@ -1,0 +1,73 @@
+{
+  "_comment": "Example OpenClaw config for using the Anthropic Load Balancer",
+  
+  "agents": {
+    "defaults": {
+      "model": {
+        "primary": "anthropic/claude-opus-4-5",
+        "fallbacks": ["anthropic/claude-sonnet-4-5"]
+      },
+      "workspace": "~/.openclaw/workspace",
+      "maxConcurrent": 4,
+      "subagents": {
+        "maxConcurrent": 8
+      }
+    }
+  },
+
+  "models": {
+    "mode": "merge",
+    "providers": {
+      "anthropic": {
+        "baseUrl": "http://<load-balancer-ip>:8080",
+        "headers": {
+          "X-Client-ID": "<your-bot-name>"
+        },
+        "models": []
+      }
+    }
+  },
+
+  "gateway": {
+    "port": 18790,
+    "mode": "local",
+    "bind": "lan",
+    "auth": {
+      "mode": "token",
+      "token": "<generate-with-openssl-rand-hex-24>"
+    }
+  },
+
+  "channels": {
+    "matrix": {
+      "enabled": true,
+      "homeserver": "https://your.homeserver.com",
+      "userId": "@yourbot:your.homeserver.com",
+      "accessToken": "<your-matrix-access-token>",
+      "dmPolicy": "open",
+      "encryption": true,
+      "streamMode": "partial",
+      "groups": {
+        "!your-room-id:your.homeserver.com": {
+          "requireMention": false
+        },
+        "*": {
+          "requireMention": true
+        }
+      },
+      "actions": {
+        "reactions": true,
+        "sendMessage": true
+      },
+      "autoJoin": "always"
+    }
+  },
+
+  "plugins": {
+    "entries": {
+      "matrix": {
+        "enabled": true
+      }
+    }
+  }
+}
