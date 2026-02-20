@@ -141,7 +141,51 @@ async def lifespan(app: FastAPI):
     logger.info(f"Server listening on {config.server.host}:{config.server.port}")
     logger.info("=" * 60)
     
+    # Start background task to update profiles and utilization
+    import asyncio
+    import httpx
+    
+    async def update_profiles_and_utilization():
+        """Background task to update bot profiles and utilization data."""
+        while True:
+            try:
+                # Update bot profiles
+                profiles = await storage.get_bot_profiles()
+                proxy.set_bot_profiles(profiles)
+                
+                # Update utilization from usage API
+                try:
+                    async with httpx.AsyncClient(timeout=10.0) as client:
+                        response = await client.get("http://localhost:5050/api/usage")
+                        if response.status_code == 200:
+                            data = response.json()
+                            utilization = {}
+                            for account in data.get("accounts", []):
+                                utilization[account["id"]] = {
+                                    "five_hour": account.get("five_hour", {}),
+                                    "seven_day": account.get("seven_day", {}),
+                                }
+                            tracker.set_utilization_data(utilization)
+                            logger.debug(f"Updated utilization data for {len(utilization)} accounts")
+                except Exception as e:
+                    logger.debug(f"Could not fetch utilization data: {e}")
+                
+            except Exception as e:
+                logger.error(f"Error in profile update task: {e}")
+            
+            await asyncio.sleep(60)  # Update every 60 seconds
+    
+    # Start background task
+    update_task = asyncio.create_task(update_profiles_and_utilization())
+    
     yield
+    
+    # Cancel background task
+    update_task.cancel()
+    try:
+        await update_task
+    except asyncio.CancelledError:
+        pass
     
     # Shutdown
     logger.info("Shutting down...")
@@ -295,6 +339,19 @@ async def admin_client_detail(request: Request, client_id: str, period: str = "d
         raise HTTPException(status_code=400, detail="Period must be day, week, or month")
     
     return await storage.get_client_usage(client_id, period)
+
+
+@app.get("/admin/profiles")
+async def admin_profiles(request: Request):
+    """Get bot usage profiles. Localhost only."""
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+    
+    if storage is None:
+        return JSONResponse({"error": "Storage not initialized"}, status_code=503)
+    
+    profiles = await storage.get_bot_profiles()
+    return {"profiles": profiles, "timestamp": datetime.utcnow().isoformat()}
 
 
 @app.get("/admin/limits")

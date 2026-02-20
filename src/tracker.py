@@ -94,7 +94,39 @@ class SubscriptionTracker:
         """Get a specific subscription by name."""
         return self._states.get(name)
     
-    async def select_subscription(self) -> Optional[SubscriptionState]:
+    def set_utilization_data(self, utilization: dict):
+        """
+        Set account utilization data from external source (usage API).
+        
+        Args:
+            utilization: dict of subscription_name -> {
+                "five_hour": {"utilization": float, "resets_at": str},
+                "seven_day": {"utilization": float, "resets_at": str}
+            }
+        """
+        self._utilization = utilization
+    
+    def _get_utilization_score(self, name: str) -> float:
+        """
+        Get a utilization score for a subscription (0-100, lower is better).
+        
+        Considers both 5-hour and 7-day utilization, weighted by reset time.
+        """
+        if not hasattr(self, '_utilization') or name not in self._utilization:
+            return 50.0  # Default mid-range if no data
+        
+        data = self._utilization[name]
+        five_hour = data.get("five_hour", {}).get("utilization", 50)
+        seven_day = data.get("seven_day", {}).get("utilization", 50)
+        
+        # Weight 5-hour more heavily since it resets sooner
+        return (five_hour * 0.7) + (seven_day * 0.3)
+    
+    async def select_subscription(
+        self, 
+        client_id: Optional[str] = None,
+        bot_classification: Optional[str] = None
+    ) -> Optional[SubscriptionState]:
         """
         Select the best subscription for a new request.
         
@@ -102,8 +134,14 @@ class SubscriptionTracker:
         1. Must be enabled
         2. Must not be at max capacity
         3. Must not be in cooldown
-        4. Prefer highest available capacity
-        5. Tiebreaker: lowest priority number
+        4. Smart scoring based on:
+           - Available capacity
+           - Account utilization (prefer lower utilization)
+           - Bot classification (spread heavy bots)
+        
+        Args:
+            client_id: Optional client identifier for logging
+            bot_classification: Optional "light", "medium", or "heavy"
         
         Returns:
             Best subscription, or None if all are unavailable.
@@ -133,8 +171,33 @@ class SubscriptionTracker:
                 logger.warning("No subscriptions available!")
                 return None
             
-            # Sort by: available capacity (desc), then priority (asc)
-            candidates.sort(key=lambda s: (-s.available_capacity, s.priority))
+            # Smart scoring: lower score = better
+            def score_subscription(state: SubscriptionState) -> tuple:
+                # Base: utilization (0-100, lower better)
+                util_score = self._get_utilization_score(state.name)
+                
+                # Capacity score (0-100, lower better = more available)
+                capacity_score = 100 - (state.available_capacity / state.max_concurrent * 100)
+                
+                # Heavy bots should prefer less-utilized accounts
+                if bot_classification == "heavy":
+                    util_weight = 0.6
+                    capacity_weight = 0.3
+                else:
+                    util_weight = 0.4
+                    capacity_weight = 0.5
+                
+                priority_weight = 0.1
+                
+                final_score = (
+                    util_score * util_weight +
+                    capacity_score * capacity_weight +
+                    state.priority * priority_weight
+                )
+                
+                return (final_score, state.priority)
+            
+            candidates.sort(key=score_subscription)
             
             selected = candidates[0]
             logger.debug(

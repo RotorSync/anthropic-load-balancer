@@ -112,6 +112,11 @@ class AnthropicProxy:
             await self._client.aclose()
             logger.info("Proxy HTTP client closed")
     
+    def set_bot_profiles(self, profiles: dict):
+        """Set bot profiles for smart routing."""
+        self._bot_profiles = profiles
+        logger.debug(f"Updated bot profiles: {len(profiles)} bots")
+    
     @property
     def client(self) -> httpx.AsyncClient:
         if self._client is None:
@@ -288,9 +293,17 @@ class AnthropicProxy:
         # Check if streaming
         is_streaming = self._is_streaming_request(body)
         
+        # Get bot classification for smart routing
+        bot_classification = None
+        if hasattr(self, '_bot_profiles') and client_id in self._bot_profiles:
+            bot_classification = self._bot_profiles[client_id].get("classification")
+        
         # For streaming requests, no retry (can't replay partial streams)
         if is_streaming:
-            subscription = await self.tracker.select_subscription()
+            subscription = await self.tracker.select_subscription(
+                client_id=client_id,
+                bot_classification=bot_classification
+            )
             if subscription is None:
                 logger.warning(f"[{request_id}] No subscriptions available")
                 return Response(
@@ -357,7 +370,10 @@ class AnthropicProxy:
         last_error_response: Response | None = None
         
         for attempt in range(MAX_429_RETRIES + 1):
-            subscription = await self.tracker.select_subscription()
+            subscription = await self.tracker.select_subscription(
+                client_id=client_id,
+                bot_classification=bot_classification
+            )
             
             if subscription is None:
                 logger.warning(f"[{request_id}] No subscriptions available (attempt {attempt + 1})")

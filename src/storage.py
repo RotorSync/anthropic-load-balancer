@@ -375,3 +375,68 @@ class UsageStorage:
                     logger.info(f"Cleaned up {deleted} old request records")
                 
                 return deleted
+    
+    async def get_bot_profiles(self) -> dict:
+        """
+        Get usage profiles for all bots.
+        
+        Returns dict of client_id -> {
+            avg_tokens_day: int,
+            avg_requests_hour: float,
+            classification: "light" | "medium" | "heavy",
+            days_active: int,
+            last_seen: str
+        }
+        
+        Classification thresholds:
+        - light: < 1,000 tokens/day
+        - medium: 1,000 - 10,000 tokens/day
+        - heavy: > 10,000 tokens/day
+        """
+        async with self._lock:
+            with self._get_conn() as conn:
+                # Get daily averages per client
+                profiles = conn.execute("""
+                    SELECT 
+                        client_id,
+                        COUNT(DISTINCT date) as days_active,
+                        SUM(input_tokens + output_tokens) as total_tokens,
+                        SUM(requests) as total_requests,
+                        MAX(date) as last_active_date
+                    FROM daily_usage
+                    WHERE date >= date('now', '-30 days')
+                    GROUP BY client_id
+                """).fetchall()
+                
+                result = {}
+                for row in profiles:
+                    client_id = row["client_id"]
+                    days = max(row["days_active"], 1)
+                    total_tokens = row["total_tokens"] or 0
+                    total_requests = row["total_requests"] or 0
+                    
+                    avg_tokens_day = total_tokens / days
+                    avg_requests_hour = (total_requests / days) / 24  # Rough estimate
+                    
+                    # Classify
+                    if avg_tokens_day < 1000:
+                        classification = "light"
+                    elif avg_tokens_day < 10000:
+                        classification = "medium"
+                    else:
+                        classification = "heavy"
+                    
+                    result[client_id] = {
+                        "avg_tokens_day": int(avg_tokens_day),
+                        "avg_requests_hour": round(avg_requests_hour, 2),
+                        "classification": classification,
+                        "days_active": days,
+                        "last_seen": row["last_active_date"],
+                    }
+                
+                return result
+    
+    async def get_bot_profile(self, client_id: str) -> Optional[dict]:
+        """Get profile for a specific bot."""
+        profiles = await self.get_bot_profiles()
+        return profiles.get(client_id)
