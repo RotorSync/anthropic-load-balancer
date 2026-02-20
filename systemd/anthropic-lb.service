@@ -1,0 +1,28 @@
+[Unit]
+Description=Anthropic API Load Balancer
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/anthropic-load-balancer
+Environment="PATH=/home/ubuntu/anthropic-load-balancer/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/ubuntu/anthropic-load-balancer/venv/bin/uvicorn src.main:app --host 0.0.0.0 --port 8080 --workers 1
+Restart=always
+RestartSec=5
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/anthropic-load-balancer
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=anthropic-lb
+
+[Install]
+WantedBy=multi-user.target
