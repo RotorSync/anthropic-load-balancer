@@ -354,6 +354,25 @@ async def admin_profiles(request: Request):
     return {"profiles": profiles, "timestamp": datetime.utcnow().isoformat()}
 
 
+@app.get("/admin/flow")
+async def admin_flow(request: Request, minutes: int = 5):
+    """
+    Get token flow data for visualization.
+    
+    Returns client → subscription flows for the specified time window.
+    """
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+    
+    if storage is None:
+        return JSONResponse({"error": "Storage not initialized"}, status_code=503)
+    
+    # Clamp minutes to reasonable range
+    minutes = max(1, min(60, minutes))
+    
+    return await storage.get_flow_data(minutes)
+
+
 @app.get("/admin/limits")
 async def admin_limits(request: Request):
     """Proxy to the usage API for account limits. Localhost only."""

@@ -440,3 +440,48 @@ class UsageStorage:
         """Get profile for a specific bot."""
         profiles = await self.get_bot_profiles()
         return profiles.get(client_id)
+    
+    async def get_flow_data(self, minutes: int = 5) -> dict:
+        """
+        Get token flow data for visualization.
+        
+        Returns client → subscription flows for the specified time window.
+        """
+        async with self._lock:
+            # For recent flows, query the requests table directly
+            cutoff = (datetime.utcnow() - timedelta(minutes=minutes)).isoformat()
+            
+            with self._get_conn() as conn:
+                rows = conn.execute("""
+                    SELECT 
+                        client_id,
+                        subscription,
+                        COUNT(*) as requests,
+                        SUM(input_tokens) as input_tokens,
+                        SUM(output_tokens) as output_tokens
+                    FROM requests
+                    WHERE timestamp >= ?
+                    GROUP BY client_id, subscription
+                    ORDER BY SUM(input_tokens) + SUM(output_tokens) DESC
+                """, (cutoff,)).fetchall()
+                
+                flows = []
+                total_tokens = 0
+                
+                for row in rows:
+                    tokens = (row["input_tokens"] or 0) + (row["output_tokens"] or 0)
+                    total_tokens += tokens
+                    flows.append({
+                        "from": row["client_id"],
+                        "to": row["subscription"],
+                        "requests": row["requests"],
+                        "tokens": tokens,
+                        "input_tokens": row["input_tokens"] or 0,
+                        "output_tokens": row["output_tokens"] or 0,
+                    })
+                
+                return {
+                    "flows": flows,
+                    "period_minutes": minutes,
+                    "total_tokens": total_tokens,
+                }

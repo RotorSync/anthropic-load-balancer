@@ -709,47 +709,63 @@
         }
 
         let clientTokens = {};  // Track tokens per client for flow rate
+        let flowData = [];  // Client → subscription mappings
         
         function updateFlowData() {
             Promise.all([
                 fetch('/admin/clients').then(r => r.json()),
-                fetch('/admin/usage?period=day').then(r => r.json())
-            ]).then(([clientData, usageData]) => {
-                flowClients = clientData.clients.map(c => c.client_id).slice(0, 5);
+                fetch('/admin/flow?minutes=5').then(r => r.json())
+            ]).then(([clientData, flowResponse]) => {
                 flowSubs = clientData.live.subscriptions.map(s => s.name);
+                flowData = flowResponse.flows || [];
                 
-                // Get token usage per client
-                const byClient = usageData.by_client || {};
+                // Get unique clients from flow data, preserving order by token volume
+                const clientSet = new Set();
+                flowData.forEach(f => clientSet.add(f.from));
+                flowClients = Array.from(clientSet).slice(0, 5);
+                
+                // Build token lookup and find max
                 let maxTokens = 1;
-                flowClients.forEach(clientId => {
-                    const info = byClient[clientId];
-                    const tokens = typeof info === 'object' ? (info.input_tokens || 0) + (info.output_tokens || 0) : Number(info) || 0;
-                    clientTokens[clientId] = tokens;
-                    if (tokens > maxTokens) maxTokens = tokens;
+                flowData.forEach(f => {
+                    clientTokens[f.from] = (clientTokens[f.from] || 0) + f.tokens;
+                    if (clientTokens[f.from] > maxTokens) maxTokens = clientTokens[f.from];
                 });
                 
-                // Spawn particles based on usage - more tokens = more particles
-                clientData.clients.forEach((client, ci) => {
-                    if (ci >= 5) return;
-                    const subIdx = flowSubs.indexOf(client.last_subscription);
-                    if (subIdx < 0) return;
+                // Spawn particles based on actual flow data
+                flowData.forEach(flow => {
+                    const ci = flowClients.indexOf(flow.from);
+                    const subIdx = flowSubs.indexOf(flow.to);
+                    if (ci < 0 || ci >= 5 || subIdx < 0) return;
                     
-                    const tokens = clientTokens[client.client_id] || 0;
-                    const flowRate = Math.min(0.8, 0.1 + (tokens / maxTokens) * 0.7);  // Scale 0.1-0.8
-                    const particleSize = 2 + (tokens / maxTokens) * 3;  // Bigger for heavy users
+                    const tokens = flow.tokens || 0;
+                    const flowRate = Math.min(0.9, 0.15 + (tokens / maxTokens) * 0.75);
+                    const particleSize = 2 + (tokens / maxTokens) * 3;
                     
                     if (Math.random() < flowRate) {
-                        // Spawn multiple particles for heavy users
                         const burstCount = Math.ceil(1 + (tokens / maxTokens) * 2);
                         for (let b = 0; b < burstCount; b++) {
                             setTimeout(() => {
-                                spawnParticleWithSize(ci, subIdx, true, particleSize);
-                                setTimeout(() => spawnParticleWithSize(ci, subIdx, false, particleSize), 150 + Math.random() * 200);
+                                // Input particles (cyan) - proportional to input_tokens
+                                if (flow.input_tokens > 0) {
+                                    spawnParticleWithSize(ci, subIdx, true, particleSize);
+                                }
+                                // Output particles (purple) - proportional to output_tokens
+                                setTimeout(() => {
+                                    if (flow.output_tokens > 0) {
+                                        spawnParticleWithSize(ci, subIdx, false, particleSize * 0.8);
+                                    }
+                                }, 150 + Math.random() * 200);
                             }, b * 80);
                         }
                     }
                 });
-            }).catch(() => {});
+            }).catch(() => {
+                // Fallback to old method if /admin/flow fails
+                fetch('/admin/clients').then(r => r.json()).then(clientData => {
+                    flowClients = clientData.clients.map(c => c.client_id).slice(0, 5);
+                    flowSubs = clientData.live.subscriptions.map(s => s.name);
+                });
+            });
         }
         
         function spawnParticleWithSize(clientIdx, subIdx, isInput, size) {
