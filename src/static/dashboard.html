@@ -613,24 +613,7 @@
         }
 
         function spawnParticle(clientIdx, subIdx, isInput) {
-            const rect = flowCanvas.getBoundingClientRect();
-            const w = rect.width;
-            const h = rect.height;
-            const centerX = w / 2;
-            const centerY = h / 2;
-            
-            const clientY = 40 + clientIdx * 50;
-            const subY = 40 + subIdx * 55;
-            
-            const startX = isInput ? 80 : centerX;
-            const startY = isInput ? clientY : centerY;
-            const endX = isInput ? centerX : w - 80;
-            const endY = isInput ? centerY : subY;
-            
-            const color = isInput ? 'rgba(34, 211, 238, 1)' : 'rgba(192, 132, 252, 1)';
-            const size = 2 + Math.random() * 2;
-            
-            flowParticles.push(new FlowParticle(startX, startY, endX, endY, color, size));
+            spawnParticleWithSize(clientIdx, subIdx, isInput, 2 + Math.random() * 2);
         }
 
         function drawFlowViz() {
@@ -725,21 +708,68 @@
             });
         }
 
+        let clientTokens = {};  // Track tokens per client for flow rate
+        
         function updateFlowData() {
-            fetch('/admin/clients').then(r => r.json()).then(data => {
-                flowClients = data.clients.map(c => c.client_id).slice(0, 5);
-                flowSubs = data.live.subscriptions.map(s => s.name);
+            Promise.all([
+                fetch('/admin/clients').then(r => r.json()),
+                fetch('/admin/usage?period=day').then(r => r.json())
+            ]).then(([clientData, usageData]) => {
+                flowClients = clientData.clients.map(c => c.client_id).slice(0, 5);
+                flowSubs = clientData.live.subscriptions.map(s => s.name);
                 
-                // Spawn particles based on recent activity
-                data.clients.forEach((client, ci) => {
+                // Get token usage per client
+                const byClient = usageData.by_client || {};
+                let maxTokens = 1;
+                flowClients.forEach(clientId => {
+                    const info = byClient[clientId];
+                    const tokens = typeof info === 'object' ? (info.input_tokens || 0) + (info.output_tokens || 0) : Number(info) || 0;
+                    clientTokens[clientId] = tokens;
+                    if (tokens > maxTokens) maxTokens = tokens;
+                });
+                
+                // Spawn particles based on usage - more tokens = more particles
+                clientData.clients.forEach((client, ci) => {
                     if (ci >= 5) return;
                     const subIdx = flowSubs.indexOf(client.last_subscription);
-                    if (subIdx >= 0 && Math.random() < 0.3) {
-                        spawnParticle(ci, subIdx, true);  // Input
-                        setTimeout(() => spawnParticle(ci, subIdx, false), 200 + Math.random() * 300);  // Output
+                    if (subIdx < 0) return;
+                    
+                    const tokens = clientTokens[client.client_id] || 0;
+                    const flowRate = Math.min(0.8, 0.1 + (tokens / maxTokens) * 0.7);  // Scale 0.1-0.8
+                    const particleSize = 2 + (tokens / maxTokens) * 3;  // Bigger for heavy users
+                    
+                    if (Math.random() < flowRate) {
+                        // Spawn multiple particles for heavy users
+                        const burstCount = Math.ceil(1 + (tokens / maxTokens) * 2);
+                        for (let b = 0; b < burstCount; b++) {
+                            setTimeout(() => {
+                                spawnParticleWithSize(ci, subIdx, true, particleSize);
+                                setTimeout(() => spawnParticleWithSize(ci, subIdx, false, particleSize), 150 + Math.random() * 200);
+                            }, b * 80);
+                        }
                     }
                 });
             }).catch(() => {});
+        }
+        
+        function spawnParticleWithSize(clientIdx, subIdx, isInput, size) {
+            const rect = flowCanvas.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+            const centerX = w / 2;
+            const centerY = h / 2;
+            
+            const clientY = 40 + clientIdx * 50;
+            const subY = 40 + subIdx * 55;
+            
+            const startX = isInput ? 80 : centerX;
+            const startY = isInput ? clientY : centerY;
+            const endX = isInput ? centerX : w - 80;
+            const endY = isInput ? centerY : subY;
+            
+            const color = isInput ? 'rgba(34, 211, 238, 1)' : 'rgba(192, 132, 252, 1)';
+            
+            flowParticles.push(new FlowParticle(startX, startY, endX, endY, color, size));
         }
 
         // Animation loop
