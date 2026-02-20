@@ -2,28 +2,28 @@
   "subscriptions": [
     {
       "name": "hh",
-      "api_key": "sk-ant-your-key-here",
+      "api_key": "your-oauth-token-here",
       "max_concurrent": 5,
       "priority": 1,
       "enabled": true
     },
     {
       "name": "cam",
-      "api_key": "sk-ant-your-key-here",
+      "api_key": "your-oauth-token-here",
       "max_concurrent": 5,
       "priority": 2,
       "enabled": true
     },
     {
       "name": "norm",
-      "api_key": "sk-ant-your-key-here",
+      "api_key": "your-oauth-token-here",
       "max_concurrent": 5,
       "priority": 3,
       "enabled": true
     },
     {
       "name": "account4",
-      "api_key": "sk-ant-your-key-here",
+      "api_key": "your-oauth-token-here",
       "max_concurrent": 5,
       "priority": 4,
       "enabled": true

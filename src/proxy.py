@@ -83,11 +83,16 @@ class AnthropicProxy:
             if key.lower() not in SKIP_REQUEST_HEADERS:
                 headers[key] = value
         
-        # Set the API key for the selected subscription
-        headers["x-api-key"] = subscription.api_key
-        
-        # Remove any existing authorization header
-        headers.pop("authorization", None)
+        # Set auth for the selected subscription
+        # OAuth keys use Bearer token, regular keys use x-api-key
+        if subscription.api_key.startswith("sk-ant-"):
+            # Regular API key
+            headers["x-api-key"] = subscription.api_key
+            headers.pop("authorization", None)
+        else:
+            # OAuth token - use Bearer auth
+            headers["authorization"] = f"Bearer {subscription.api_key}"
+            headers.pop("x-api-key", None)
         
         return headers
     

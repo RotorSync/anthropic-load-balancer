@@ -51,6 +51,15 @@ cp config.example.json config.json
 # Edit config.json with your subscription details
 ```
 
+## Authentication
+
+The load balancer supports both authentication methods:
+
+- **OAuth tokens** — Used with `Authorization: Bearer <token>` header (auto-detected)
+- **API keys** — Keys starting with `sk-ant-` use `x-api-key` header
+
+OAuth tokens are auto-detected: if the key doesn't start with `sk-ant-`, it's treated as an OAuth token.
+
 ## Configuration
 
 Edit `config.json`:
@@ -87,7 +96,7 @@ Edit `config.json`:
 | Field | Description |
 |-------|-------------|
 | `subscriptions[].name` | Human-readable name for logging |
-| `subscriptions[].api_key` | Anthropic API key for this subscription |
+| `subscriptions[].api_key` | Anthropic OAuth token or API key (auto-detected) |
 | `subscriptions[].max_concurrent` | Max simultaneous requests for this subscription |
 | `subscriptions[].priority` | Tiebreaker (lower = preferred) |
 | `server.host` | Bind address |
