@@ -124,6 +124,8 @@ OpenClaw needs two things: the load balancer URL and a client ID for tracking.
 
 #### Basic Setup (LAN)
 
+See [`examples/openclaw-config.json`](examples/openclaw-config.json) for a complete example.
+
 Edit `~/.openclaw/openclaw.json`:
 
 ```json
