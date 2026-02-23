@@ -55,10 +55,25 @@ cp config.example.json config.json
 
 The load balancer supports both authentication methods:
 
-- **OAuth tokens** — Used with `Authorization: Bearer <token>` header (auto-detected)
+- **OAuth tokens** — Used with `Authorization: Bearer <token>` header (auto-detected, auto-refreshing)
 - **API keys** — Keys starting with `sk-ant-` use `x-api-key` header
 
 OAuth tokens are auto-detected: if the key doesn't start with `sk-ant-`, it's treated as an OAuth token.
+
+### OAuth Management (Dashboard)
+
+The dashboard includes an **Auth** tab for managing OAuth tokens per subscription:
+
+1. Sign out of all accounts at [claude.ai](https://claude.ai) except the one matching the subscription
+2. Click **Authorize** on the subscription
+3. Click **Open** to visit the authorization URL
+4. Click **Allow** on the Anthropic page
+5. Copy the authorization code and paste it back in the dashboard
+6. Click **Submit** — status should change to Active
+
+Once authorized, tokens auto-refresh automatically. You can also paste tokens manually via the **Paste Tokens** button.
+
+If a subscription shows **Auth Failed**, re-authorize it using the steps above.
 
 ## Configuration
 
@@ -207,7 +222,16 @@ All standard Anthropic API endpoints are proxied:
 
 - `GET /health` — Health check
 - `GET /status` — Current load balancer status (connections per subscription)
-- `GET /metrics` — Prometheus-compatible metrics (future)
+- `GET /admin/dashboard` — Web dashboard (real-time monitoring)
+- `GET /admin/clients` — Client tracking (requests, tokens, last seen)
+- `GET /admin/usage?period=day|week|month` — Token usage breakdown
+- `GET /admin/limits` — Account utilization limits (5-hour and 7-day)
+- `GET /admin/flow?minutes=N` — Token flow data for visualization
+- `GET /admin/profiles` — Bot usage profiles and classification
+- `GET /admin/tokens` — OAuth token status per subscription
+- `POST /admin/oauth/start?sub=NAME` — Begin OAuth authorization flow
+- `POST /admin/oauth/callback?sub=NAME&code=CODE` — Complete OAuth flow
+- `POST /admin/oauth/manual` — Manually set access/refresh tokens
 
 ## Load Balancing Algorithm
 
@@ -247,6 +271,18 @@ Bots are automatically classified based on their average daily token usage:
 
 ## Monitoring
 
+### Web Dashboard
+
+The dashboard at `/admin/dashboard` provides real-time monitoring:
+
+- **Subscriptions** — Active connections, capacity, cooldown status
+- **Account Limits** — 5-hour and 7-day utilization with pace tracking (shows if you're ahead/behind where you should be based on time elapsed, plus an overall average)
+- **Clients** — Per-bot request counts, token usage (daily/weekly), last seen
+- **Usage Charts** — Token usage by subscription and client (day/week/month)
+- **Bot Profiles** — Automatic classification (light/medium/heavy)
+- **Token Flow** — Live animated visualization of requests flowing through the balancer
+- **Auth Tab** — OAuth token management with step-by-step instructions
+
 ### Status endpoint
 
 ```bash
@@ -262,8 +298,10 @@ curl http://localhost:8080/status
       "max_concurrent": 5,
       "available": 3,
       "in_cooldown": false,
+      "auth_failed": false,
       "total_requests": 1523,
-      "total_errors": 3
+      "total_errors": 3,
+      "token_expires_in": 3200
     }
   ],
   "total_active": 5,
@@ -277,6 +315,7 @@ Logs include:
 - Request routing decisions
 - Subscription selection reasons
 - 429 errors and cooldown triggers
+- 401 auth failures (marks subscription as failed, retries on another)
 - Connection lifecycle events
 
 ## Deployment
