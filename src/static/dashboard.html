@@ -13,19 +13,55 @@
         }
     </script>
     <style>
-        html, body { background: #0f1117; height: 100%; margin: 0; overflow: hidden; }
+        html, body { background: #0f1117; height: 100%; margin: 0; overflow-x: hidden; overflow-y: auto; }
         .pulse-dot { animation: pulse-dot 2s infinite; }
         @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         @keyframes pulse-green { 0%, 100% { box-shadow: 0 0 4px #22c55e; } 50% { box-shadow: 0 0 12px #22c55e, 0 0 20px #22c55e40; } }
         .active-client { animation: pulse-green 1s infinite; border-color: #22c55e !important; }
+
+        /* Tab bar */
+        .tab-bar { display: flex; gap: 2px; }
+        .tab-btn { padding: 4px 16px; font-size: 11px; font-weight: 600; border-radius: 6px 6px 0 0; cursor: pointer; border: 1px solid transparent; border-bottom: none; transition: all 0.15s; }
+        .tab-btn.active { background: #1a1d27; color: #e4e4e7; border-color: #2a2e3a; }
+        .tab-btn:not(.active) { background: transparent; color: #71717a; }
+        .tab-btn:not(.active):hover { color: #e4e4e7; background: #1a1d2780; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        /* Auth page */
+        .auth-card { background: #1a1d27; border: 1px solid #2a2e3a; border-radius: 8px; padding: 16px; }
+        .auth-btn { padding: 6px 16px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; transition: all 0.15s; border: none; }
+        .auth-btn-primary { background: #3b82f6; color: white; }
+        .auth-btn-primary:hover { background: #2563eb; }
+        .auth-btn-primary:disabled { background: #1e3a5f; color: #71717a; cursor: not-allowed; }
+        .auth-btn-success { background: #22c55e; color: white; }
+        .auth-btn-danger { background: #ef4444; color: white; }
+        .auth-input { background: #0f1117; border: 1px solid #2a2e3a; border-radius: 6px; padding: 6px 10px; color: #e4e4e7; font-size: 12px; font-family: monospace; width: 100%; }
+        .auth-input:focus { outline: none; border-color: #3b82f6; }
+        .auth-status { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 9999px; font-size: 10px; font-weight: 600; }
+        .auth-status-ok { background: #22c55e20; color: #22c55e; }
+        .auth-status-expired { background: #ef444420; color: #ef4444; }
+        .auth-status-notoken { background: #71717a20; color: #71717a; }
+        .auth-status-refreshing { background: #f59e0b20; color: #f59e0b; }
+        /* Responsive fixes */
+        @media (max-width: 1024px) {
+            .main-grid { grid-template-columns: 1fr !important; height: auto !important; }
+            .main-grid > div { height: auto !important; min-height: 200px; }
+            .stats-row { grid-template-columns: repeat(3, 1fr) !important; }
+            .sub-grid { grid-template-columns: 1fr !important; }
+            .flow-section { height: 250px !important; min-height: 250px !important; }
+        }
+        @media (max-width: 640px) {
+            .stats-row { grid-template-columns: repeat(2, 1fr) !important; }
+            .header-row { flex-direction: column; gap: 0.5rem; align-items: flex-start !important; }
+        }
     </style>
 </head>
-<body class="text-dark-text p-3 h-screen">
-    <div class="h-full flex flex-col max-w-[1400px] mx-auto">
+<body class="text-dark-text p-3 min-h-screen">
+    <div class="flex flex-col max-w-[1400px] mx-auto">
         <!-- Header -->
-        <div class="flex items-center justify-between mb-2">
+        <div class="header-row flex items-center justify-between mb-2 flex-wrap gap-2">
             <div class="flex items-center gap-3">
-                <svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="w-7 h-7 flex-shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <circle cx="12" cy="12" r="10" class="text-blue-500"/>
                     <path d="M12 6v6l4 2" class="text-blue-400"/>
                     <circle cx="12" cy="12" r="3" fill="#3b82f6"/>
@@ -35,15 +71,24 @@
                     <span class="text-dark-muted text-[10px] italic">Balancing your stupidity™</span>
                 </div>
             </div>
-            <div class="flex items-center gap-2 text-xs">
+            <div class="flex items-center gap-2 text-xs flex-wrap">
                 <span id="status-dot" class="w-2 h-2 rounded-full bg-green-500 pulse-dot"></span>
                 <span id="status-text" class="text-dark-muted">Connected</span>
                 <span class="text-dark-muted ml-2">Updated: <span id="last-updated">—</span></span>
             </div>
         </div>
 
+        <!-- Tab Bar -->
+        <div class="tab-bar mb-2">
+            <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+            <button class="tab-btn" onclick="switchTab('auth')">Auth</button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div id="tab-dashboard" class="tab-content active">
+
         <!-- Stats Row -->
-        <div class="grid grid-cols-6 gap-2 mb-2">
+        <div class="stats-row grid grid-cols-6 lg:grid-cols-6 md:grid-cols-3 sm:grid-cols-2 gap-2 mb-2">
             <div class="bg-dark-card rounded p-1.5 border border-dark-border text-center">
                 <div class="text-dark-muted text-[10px]">Capacity</div>
                 <div id="total-capacity" class="text-lg font-bold">20</div>
@@ -71,18 +116,18 @@
         </div>
 
         <!-- Main Grid: Left 2/3, Right 1/3 -->
-        <div class="grid grid-cols-3 gap-2 mb-2" style="height: 45%;">
+        <div class="main-grid grid grid-cols-1 lg:grid-cols-3 gap-2 mb-2">
             <!-- Left Column -->
-            <div class="col-span-2 grid grid-rows-2 gap-2">
+            <div class="lg:col-span-2 grid gap-2">
                 <!-- Top: Subs + Limits -->
-                <div class="grid grid-cols-2 gap-2">
-                    <div class="bg-dark-card rounded border border-dark-border flex flex-col">
+                <div class="sub-grid grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <div class="bg-dark-card rounded border border-dark-border flex flex-col min-h-[120px]">
                         <div class="px-2 py-1 border-b border-dark-border"><h2 class="font-semibold text-[11px]">Subscriptions</h2></div>
                         <div class="p-2 flex-1"><div id="subscriptions" class="space-y-1.5"></div></div>
                     </div>
-                    <div class="bg-dark-card rounded border border-dark-border flex flex-col">
-                        <div class="px-2 py-1 border-b border-dark-border flex justify-between">
-                            <h2 class="font-semibold text-[11px]">Account Limits</h2>
+                    <div class="bg-dark-card rounded border border-dark-border flex flex-col min-h-[120px]">
+                        <div class="px-2 py-1 border-b border-dark-border flex justify-between flex-wrap gap-1">
+                            <h2 class="font-semibold text-[11px]">Account Limits <span id="limits-avg-delta" class="text-[10px] font-normal ml-1"></span></h2>
                             <span id="limits-updated" class="text-dark-muted text-[10px]"></span>
                         </div>
                         <div class="p-2 flex-1 grid grid-cols-2 gap-3 text-[10px]">
@@ -92,10 +137,10 @@
                     </div>
                 </div>
                 <!-- Bottom: Clients -->
-                <div class="bg-dark-card rounded border border-dark-border flex flex-col">
+                <div class="bg-dark-card rounded border border-dark-border flex flex-col min-h-[150px]">
                     <div class="px-2 py-1 border-b border-dark-border"><h2 class="font-semibold text-[11px]">Clients</h2></div>
-                    <div class="p-2 flex-1 overflow-y-auto">
-                        <table class="w-full text-[10px]">
+                    <div class="p-2 flex-1 overflow-x-auto">
+                        <table class="w-full text-[10px] min-w-[400px]">
                             <thead><tr class="text-dark-muted text-left"><th class="pb-1">Client</th><th class="pb-1">Sub</th><th class="pb-1">Req</th><th class="pb-1">Day</th><th class="pb-1">Week</th><th class="pb-1">Last</th></tr></thead>
                             <tbody id="clients-table"><tr><td colspan="6" class="text-dark-muted text-center py-2">No clients</td></tr></tbody>
                         </table>
@@ -107,7 +152,7 @@
             <div class="flex flex-col gap-2">
                 <!-- Usage Chart -->
                 <div class="bg-dark-card rounded border border-dark-border">
-                    <div class="px-2 py-1 border-b border-dark-border flex justify-between items-center">
+                    <div class="px-2 py-1 border-b border-dark-border flex justify-between items-center flex-wrap gap-1">
                         <h2 class="font-semibold text-[11px]">Usage</h2>
                         <div class="flex gap-0.5">
                             <button onclick="setPeriod('day')" id="btn-day" class="px-1 text-[10px] rounded bg-dark-border">D</button>
@@ -121,7 +166,7 @@
                     </div>
                 </div>
                 <!-- Breakdown -->
-                <div class="bg-dark-card rounded border border-dark-border flex-1">
+                <div class="bg-dark-card rounded border border-dark-border">
                     <div class="px-2 py-1 border-b border-dark-border"><h2 class="font-semibold text-[11px]">Breakdown</h2></div>
                     <div class="p-2 grid grid-cols-2 gap-2 text-[10px]">
                         <div><div class="text-dark-muted mb-1">By Subscription</div><div id="usage-by-sub" class="space-y-1"></div></div>
@@ -137,8 +182,8 @@
         </div>
 
         <!-- Token Flow - Full Width -->
-        <div class="bg-dark-card rounded border border-dark-border flex-1 flex flex-col min-h-0">
-            <div class="px-2 py-1 border-b border-dark-border flex justify-between items-center">
+        <div class="flow-section bg-dark-card rounded border border-dark-border flex flex-col" style="height: 200px; min-height: 200px;">
+            <div class="px-2 py-1 border-b border-dark-border flex justify-between items-center flex-wrap gap-1">
                 <h2 class="font-semibold text-[11px]">Token Flow</h2>
                 <div class="flex gap-2 text-[10px] text-dark-muted">
                     <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>In</span>
@@ -149,6 +194,52 @@
                 <canvas id="flow-canvas" class="w-full h-full"></canvas>
             </div>
         </div>
+
+        </div><!-- end tab-dashboard -->
+
+        <!-- Auth Tab -->
+        <div id="tab-auth" class="tab-content">
+            <div class="space-y-3">
+                <div class="auth-card">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-bold">OAuth Token Management</h2>
+                        <button class="auth-btn auth-btn-primary" onclick="refreshTokenStatus()" style="padding: 4px 10px; font-size: 10px;">Refresh Status</button>
+                    </div>
+                    <p class="text-dark-muted text-[11px] mb-3">Authorize subscriptions to obtain OAuth tokens. Tokens auto-refresh once authorized.</p>
+                    
+                    <!-- How-to instructions -->
+                    <div class="p-3 rounded border border-dark-border bg-[#0f1117] mb-3">
+                        <div class="flex items-center gap-2 mb-2 cursor-pointer" onclick="document.getElementById('auth-instructions').style.display = document.getElementById('auth-instructions').style.display === 'none' ? 'block' : 'none'; this.querySelector('span:last-child').textContent = document.getElementById('auth-instructions').style.display === 'none' ? '▶' : '▼'">
+                            <span class="text-[11px] font-bold text-blue-400">📋 How to Authorize a Subscription</span>
+                            <span class="text-[10px] text-dark-muted">▶</span>
+                        </div>
+                        <div id="auth-instructions" style="display:none" class="text-[11px] text-dark-muted space-y-1.5 pl-1">
+                            <div class="text-amber-400 font-semibold mb-2">⚠️ Before you start:</div>
+                            <div class="pl-3 mb-3">Open <a href="https://claude.ai" target="_blank" class="text-blue-400 underline">claude.ai</a> in your browser and <strong class="text-dark-text">sign out of all accounts</strong> except the one that matches the subscription you want to authorize.</div>
+                            
+                            <div class="font-semibold text-dark-text mb-1">Steps:</div>
+                            <div class="pl-3 space-y-1.5">
+                                <div><span class="text-blue-400 font-bold">1.</span> Click the <span class="text-dark-text font-semibold">Authorize</span> button on the subscription below.</div>
+                                <div><span class="text-blue-400 font-bold">2.</span> An authorization URL will appear. Click <span class="text-dark-text font-semibold">Open</span> (or copy the link and paste it into your browser).</div>
+                                <div><span class="text-blue-400 font-bold">3.</span> On the Anthropic page, click <span class="text-dark-text font-semibold">Allow</span> to approve the connection.</div>
+                                <div><span class="text-blue-400 font-bold">4.</span> Anthropic will give you an authorization code. <span class="text-dark-text font-semibold">Copy the code.</span></div>
+                                <div><span class="text-blue-400 font-bold">5.</span> Come back here and paste the code into the input field.</div>
+                                <div><span class="text-blue-400 font-bold">6.</span> Click <span class="text-dark-text font-semibold">Submit</span>. The status should change to <span class="text-green-400">Active</span>.</div>
+                            </div>
+                            
+                            <div class="mt-3 pt-2 border-t border-dark-border text-[10px]">
+                                <span class="text-dark-text font-semibold">Tip:</span> Once authorized, tokens auto-refresh — you shouldn't need to do this again unless a token is manually revoked. If you see <span class="text-red-400">Auth Failed</span>, re-authorize that subscription.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="auth-subs" class="space-y-3">
+                        <div class="text-dark-muted text-xs">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <script>
@@ -168,14 +259,14 @@
                 document.getElementById('available').textContent = live.available_capacity;
                 document.getElementById('subscriptions').innerHTML = live.subscriptions.map(s => {
                     const pct = ((s.active_connections||0) / (s.max_concurrent||5)) * 100, color = s.in_cooldown ? 'bg-red-500' : pct > 80 ? 'bg-amber-500' : 'bg-green-500';
-                    return `<div class="flex items-center gap-2 text-[10px]"><span class="w-12 font-mono">${s.name}</span><div class="flex-1 bg-dark-border rounded-full h-1.5"><div class="${color} h-full rounded-full" style="width:${pct}%"></div></div><span class="text-dark-muted w-8 text-right">${s.active_connections}/${s.max_concurrent}</span>${s.in_cooldown?'<span class="text-red-500">⚠</span>':''}</div>`;
+                    return `<div class="flex items-center gap-2 text-[10px]"><span class="w-12 font-mono truncate">${s.name}</span><div class="flex-1 bg-dark-border rounded-full h-1.5"><div class="${color} h-full rounded-full" style="width:${pct}%"></div></div><span class="text-dark-muted w-8 text-right">${s.active_connections}/${s.max_concurrent}</span>${s.in_cooldown?'<span class="text-red-500">⚠</span>':''}</div>`;
                 }).join('');
                 document.getElementById('clients-table').innerHTML = data.clients.length === 0 ? '<tr><td colspan="6" class="text-dark-muted text-center py-2">No clients</td></tr>' : data.clients.map(c => {
                     const sc = subColors[c.last_subscription] || '#666';
-                    return `<tr class="border-t border-dark-border"><td class="py-0.5 font-mono">${c.client_id}</td><td class="py-0.5"><span class="px-1 rounded" style="background:${sc}20;color:${sc}">${c.last_subscription||'—'}</span></td><td class="py-0.5">${formatNumber(c.total_requests||0)}</td><td class="py-0.5">${formatNumber(c.tokens_today||c.total_tokens||0)}</td><td class="py-0.5">${formatNumber(c.tokens_week||c.total_tokens||0)}</td><td class="py-0.5 text-dark-muted">${formatTime(c.last_seen)}</td></tr>`;
+                    return `<tr class="border-t border-dark-border"><td class="py-0.5 font-mono truncate max-w-[80px]">${c.client_id}</td><td class="py-0.5"><span class="px-1 rounded" style="background:${sc}20;color:${sc}">${c.last_subscription||'—'}</span></td><td class="py-0.5">${formatNumber(c.total_requests||0)}</td><td class="py-0.5">${formatNumber(c.tokens_today!=null?c.tokens_today:0)}</td><td class="py-0.5">${formatNumber(c.tokens_week!=null?c.tokens_week:0)}</td><td class="py-0.5 text-dark-muted">${formatTime(c.last_seen)}</td></tr>`;
                 }).join('');
                 document.getElementById('requests-today').textContent = formatNumber(data.clients.reduce((s,c) => s + (c.requests_today||c.total_requests||0), 0));
-                document.getElementById('tokens-today').textContent = formatNumber(data.clients.reduce((s,c) => s + (c.tokens_today||c.total_tokens||0), 0));
+                document.getElementById('tokens-today').textContent = formatNumber(data.clients.reduce((s,c) => s + (c.tokens_today!=null?c.tokens_today:0), 0));
                 document.getElementById('last-updated').textContent = new Date().toLocaleTimeString();
                 document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-green-500 pulse-dot';
             } catch (e) { document.getElementById('status-dot').className = 'w-2 h-2 rounded-full bg-red-500'; document.getElementById('status-text').textContent = 'Disconnected'; }
@@ -187,7 +278,6 @@
                 document.getElementById('usage-total').innerHTML = `${formatNumber(total)} <span class="text-dark-muted text-[10px] font-normal">tokens</span>`;
                 if (currentPeriod === 'week') document.getElementById('tokens-week').textContent = formatNumber(total);
                 const ctx = document.getElementById('usage-chart').getContext('2d'); if (usageChart) usageChart.destroy();
-                // Show subscription breakdown as horizontal bars
                 const subData = data.by_subscription || {};
                 const subLabels = Object.keys(subColors);
                 const subValues = subLabels.map(s => { const d = subData[s]; return typeof d==='object' ? (d.input_tokens||0)+(d.output_tokens||0) : Number(d)||0; });
@@ -204,26 +294,45 @@
         async function fetchLimits() {
             try {
                 const data = await (await fetch('/admin/limits')).json(), accounts = data.accounts || [];
+                const sevenDayDiffs = [];
                 const render = (a,p,showTarget) => { 
                     const u = Number(a[p]?.utilization)||0;
                     const color = u>=80?'bg-red-500':u>=50?'bg-amber-500':'bg-green-500'; 
                     const shortId = a.id.length > 4 ? a.id.slice(0,4) : a.id;
-                    // Calculate target (expected usage based on time elapsed)
                     let targetPct = 0;
                     if (showTarget && a[p]?.resets_at) {
                         const resetTime = new Date(a[p].resets_at);
                         const now = new Date();
                         const hoursUntilReset = (resetTime - now) / 3600000;
-                        const totalHours = p === 'five_hour' ? 5 : 168; // 5h or 7 days
+                        const totalHours = p === 'five_hour' ? 5 : 168;
                         const hoursElapsed = totalHours - hoursUntilReset;
                         targetPct = Math.max(0, Math.min(100, (hoursElapsed / totalHours) * 100));
                     }
                     const targetMarker = showTarget && targetPct > 0 ? `<div class="absolute top-0 bottom-0 w-0.5 bg-white opacity-60" style="left:${targetPct}%"></div>` : '';
-                    const status = u > targetPct + 5 ? '🔺' : u < targetPct - 5 ? '🔻' : '✓';
-                    return `<div class="flex items-center gap-1 whitespace-nowrap"><span class="w-8 font-mono text-[9px]">${shortId}</span><div class="flex-1 bg-dark-border rounded-full h-1.5 relative overflow-hidden"><div class="${color} h-full rounded-full" style="width:${u}%"></div>${targetMarker}</div><span class="w-10 text-right text-[9px]">${u}%${showTarget ? status : ''}</span></div>`; 
+                    const diff = Math.round(u - targetPct);
+                    if (showTarget && targetPct > 0) sevenDayDiffs.push(diff);
+                    const absDiff = Math.abs(diff);
+                    let diffLabel = '';
+                    if (showTarget && targetPct > 0) {
+                        if (diff > 5) diffLabel = `<span class="text-red-400">+${absDiff}%</span>`;
+                        else if (diff < -5) diffLabel = `<span class="text-green-400">-${absDiff}%</span>`;
+                        else diffLabel = `<span class="text-dark-muted">±${absDiff}%</span>`;
+                    }
+                    return `<div class="flex items-center gap-1 whitespace-nowrap"><span class="w-8 font-mono text-[9px]">${shortId}</span><div class="flex-1 bg-dark-border rounded-full h-1.5 relative overflow-hidden"><div class="${color} h-full rounded-full" style="width:${u}%"></div>${targetMarker}</div><span class="w-8 text-right text-[9px]">${u}%</span>${showTarget ? `<span class="w-10 text-right text-[9px]">${diffLabel}</span>` : ''}</div>`; 
                 };
                 document.getElementById('limits-5h').innerHTML = accounts.map(a => render(a,'five_hour',false)).join('');
                 document.getElementById('limits-7d').innerHTML = accounts.map(a => render(a,'seven_day',true)).join('');
+
+                // Average delta across all 7-day accounts
+                const avgDeltaEl = document.getElementById('limits-avg-delta');
+                if (sevenDayDiffs.length > 0) {
+                    const avgDiff = Math.round(sevenDayDiffs.reduce((s,d) => s+d, 0) / sevenDayDiffs.length);
+                    const absAvg = Math.abs(avgDiff);
+                    if (avgDiff > 5) avgDeltaEl.innerHTML = `<span class="text-red-400">avg +${absAvg}% ahead</span>`;
+                    else if (avgDiff < -5) avgDeltaEl.innerHTML = `<span class="text-green-400">avg ${absAvg}% under</span>`;
+                    else avgDeltaEl.innerHTML = `<span class="text-dark-muted">avg on pace (±${absAvg}%)</span>`;
+                } else { avgDeltaEl.innerHTML = ''; }
+
             } catch (e) { console.error(e); }
         }
 
@@ -231,13 +340,13 @@
             try {
                 const data = await (await fetch('/admin/profiles')).json(), profiles = data.profiles || {}, entries = Object.entries(profiles);
                 const icons = { light: '🟢', medium: '🟡', heavy: '🔴' };
-                document.getElementById('bot-profiles').innerHTML = entries.length===0 ? '<div class="text-dark-muted">No bots</div>' : entries.map(([bot,p]) => `<div class="flex justify-between"><span class="font-mono">${bot}</span><span>${icons[p.classification]||'🟢'} ${formatNumber(p.avg_tokens_day)}/d</span></div>`).join('');
+                document.getElementById('bot-profiles').innerHTML = entries.length===0 ? '<div class="text-dark-muted">No bots</div>' : entries.map(([bot,p]) => `<div class="flex justify-between"><span class="font-mono truncate">${bot}</span><span>${icons[p.classification]||'🟢'} ${formatNumber(p.avg_tokens_day)}/d</span></div>`).join('');
             } catch (e) {}
         }
 
         // Flow visualization
         const flowCanvas = document.getElementById('flow-canvas'), flowCtx = flowCanvas.getContext('2d');
-        let flowParticles = [], flowClients = [], flowSubs = [], clientTokens = {}, activeClients = {};
+        let flowParticles = [], flowClients = [], flowSubs = [], clientTokens = {}, activeClients = {}, clientLastSeen = {};
 
         function resizeFlowCanvas() { const r = flowCanvas.getBoundingClientRect(); flowCanvas.width = r.width * devicePixelRatio; flowCanvas.height = r.height * devicePixelRatio; flowCtx.scale(devicePixelRatio, devicePixelRatio); }
         resizeFlowCanvas(); window.addEventListener('resize', resizeFlowCanvas);
@@ -252,7 +361,6 @@
             const r = flowCanvas.getBoundingClientRect(), w=r.width, h=r.height, cx=w/2, cy=h/2;
             const clientY = 18 + ci*30, subY = 18 + si*35;
             const sx = isIn?70:cx, sy = isIn?clientY:cy, ex = isIn?cx:w-70, ey = isIn?cy:subY;
-            // Use client's color for particles
             const clientColor = clientColors[ci] || '#06b6d4';
             const rgbMatch = clientColor.match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
             const particleColor = rgbMatch ? `rgba(${parseInt(rgbMatch[1],16)},${parseInt(rgbMatch[2],16)},${parseInt(rgbMatch[3],16)},1)` : 'rgba(34,211,238,1)';
@@ -269,9 +377,12 @@
                 flowSubs = cd.live.subscriptions.map(s => s.name);
                 const flows = fd.flows || [], cs = new Set(); flows.forEach(f => cs.add(f.from));
                 flowClients = Array.from(cs).slice(0, 5);
-                // Track active clients (had flow in last 15 seconds)
+                const now = Date.now();
+                (recentFd.flows || []).forEach(f => { if (f.tokens > 0) clientLastSeen[f.from] = now; });
                 activeClients = {};
-                (recentFd.flows || []).forEach(f => { if (f.tokens > 0) activeClients[f.from] = true; });
+                Object.entries(clientLastSeen).forEach(([client, ts]) => {
+                    if (now - ts < 5000) activeClients[client] = true;
+                });
                 let max = 1; flows.forEach(f => { clientTokens[f.from] = (clientTokens[f.from]||0) + f.tokens; if(clientTokens[f.from] > max) max = clientTokens[f.from]; });
                 flows.forEach(f => {
                     const ci = flowClients.indexOf(f.from), si = flowSubs.indexOf(f.to);
@@ -286,41 +397,36 @@
             const r = flowCanvas.getBoundingClientRect(), w=r.width, h=r.height, cx=w/2, cy=h/2;
             flowCtx.clearRect(0,0,w,h);
             flowCtx.strokeStyle = 'rgba(42,46,58,0.4)'; flowCtx.lineWidth = 1;
-            // Connection lines
             flowClients.forEach((c,i) => { const y=18+i*30; flowCtx.beginPath(); flowCtx.moveTo(70,y); flowCtx.quadraticCurveTo(cx-40,y,cx,cy); flowCtx.stroke(); });
             flowSubs.forEach((s,i) => { const y=18+i*35; flowCtx.beginPath(); flowCtx.moveTo(cx,cy); flowCtx.quadraticCurveTo(cx+40,y,w-70,y); flowCtx.stroke(); });
-            // Client boxes - BIGGER, pulse green if active
             flowClients.forEach((c,i) => { 
                 const y=18+i*30;
                 const isActive = activeClients[c];
-                // Glow effect for active clients
+                const clientColor = clientColors[i] || '#06b6d4';
                 if (isActive) {
                     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
-                    flowCtx.shadowColor = '#22c55e';
-                    flowCtx.shadowBlur = 8 + pulse * 8;
+                    flowCtx.shadowColor = clientColor;
+                    flowCtx.shadowBlur = 8 + pulse * 12;
                 }
                 flowCtx.fillStyle='#1a1d27'; 
-                flowCtx.strokeStyle = isActive ? '#22c55e' : clientColors[i]; 
-                flowCtx.lineWidth = isActive ? 2.5 : 2; 
+                flowCtx.strokeStyle = clientColor; 
+                flowCtx.lineWidth = isActive ? 3 : 2; 
                 flowCtx.beginPath(); flowCtx.roundRect(5,y-12,65,24,4); flowCtx.fill(); flowCtx.stroke(); 
                 flowCtx.shadowBlur = 0;
-                flowCtx.fillStyle = isActive ? '#22c55e' : '#e4e4e7'; 
+                flowCtx.fillStyle = isActive ? clientColor : '#e4e4e7'; 
                 flowCtx.font = isActive ? 'bold 11px monospace' : '11px monospace'; 
                 flowCtx.textAlign='center'; flowCtx.fillText(c.slice(0,7),37,y+4); 
             });
-            // Load balancer - SMALLER
             const grad = flowCtx.createRadialGradient(cx,cy,0,cx,cy,18); grad.addColorStop(0,'rgba(59,130,246,0.25)'); grad.addColorStop(1,'rgba(59,130,246,0)');
             flowCtx.fillStyle=grad; flowCtx.beginPath(); flowCtx.arc(cx,cy,18,0,Math.PI*2); flowCtx.fill();
             flowCtx.fillStyle='#1a1d27'; flowCtx.strokeStyle='#3b82f6'; flowCtx.lineWidth=2; flowCtx.beginPath(); flowCtx.arc(cx,cy,14,0,Math.PI*2); flowCtx.fill(); flowCtx.stroke();
             flowCtx.fillStyle='#e4e4e7'; flowCtx.font='bold 9px sans-serif'; flowCtx.textAlign='center'; flowCtx.fillText('LB',cx,cy+3);
-            // Subscription boxes - BIGGER
             flowSubs.forEach((s,i) => { 
                 const y=18+i*35, color=subColors[s]||'#666'; 
                 flowCtx.fillStyle='#1a1d27'; flowCtx.strokeStyle=color; flowCtx.lineWidth=2; 
                 flowCtx.beginPath(); flowCtx.roundRect(w-70,y-14,65,28,4); flowCtx.fill(); flowCtx.stroke(); 
                 flowCtx.fillStyle='#e4e4e7'; flowCtx.font='bold 12px monospace'; flowCtx.textAlign='center'; flowCtx.fillText(s.toUpperCase(),w-37,y+5); 
             });
-            // Draw particles
             flowParticles = flowParticles.filter(p => { const alive = p.update(); p.draw(flowCtx); return alive; });
         }
 
@@ -329,6 +435,174 @@
         fetchClients(); fetchUsage(); fetchLimits(); fetchProfiles(); updateFlowData();
         setInterval(fetchClients, 5000); setInterval(fetchUsage, 30000); setInterval(fetchLimits, 60000); setInterval(fetchProfiles, 60000); setInterval(updateFlowData, 1500);
         animate();
+
+
+        // ============================================================
+        // Tab switching
+        // ============================================================
+        function switchTab(tab) {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
+            document.getElementById('tab-' + tab).classList.add('active');
+            if (tab === 'auth') refreshTokenStatus();
+        }
+
+        // ============================================================
+        // Auth tab logic
+        // ============================================================
+        let authFlows = {}; // sub_name -> { state: 'idle'|'waiting_code'|'exchanging', auth_url: '' }
+
+        function formatExpiry(seconds) {
+            if (seconds <= 0) return 'Expired';
+            if (seconds < 60) return seconds + 's';
+            if (seconds < 3600) return Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+            if (seconds < 86400) return Math.floor(seconds / 3600) + 'h ' + Math.floor((seconds % 3600) / 60) + 'm';
+            return Math.floor(seconds / 86400) + 'd ' + Math.floor((seconds % 86400) / 3600) + 'h';
+        }
+
+        async function refreshTokenStatus() {
+            try {
+                const data = await (await fetch('/admin/tokens')).json();
+                const container = document.getElementById('auth-subs');
+                container.innerHTML = data.tokens.map(t => {
+                    const flow = authFlows[t.name] || { state: 'idle' };
+                    let statusHtml, actionHtml;
+
+                    if (t.is_oauth && !t.auth_failed && t.expires_in_seconds > 0) {
+                        statusHtml = `<span class="auth-status auth-status-ok">Active — ${formatExpiry(t.expires_in_seconds)}</span>`;
+                    } else if (t.auth_failed) {
+                        statusHtml = '<span class="auth-status auth-status-expired">Auth Failed</span>';
+                    } else if (t.is_oauth && t.expires_in_seconds <= 0) {
+                        statusHtml = '<span class="auth-status auth-status-expired">Token Expired</span>';
+                    } else {
+                        statusHtml = '<span class="auth-status auth-status-notoken">No OAuth Token</span>';
+                    }
+
+                    if (flow.state === 'waiting_code') {
+                        actionHtml = `
+                            <div class="mt-2 space-y-2">
+                                <div class="text-[11px] text-dark-muted">1. Open this link and log in:</div>
+                                <div class="flex gap-2">
+                                    <input type="text" class="auth-input flex-1" value="${flow.auth_url}" readonly onclick="this.select()" />
+                                    <button class="auth-btn auth-btn-primary" onclick="window.open('${flow.auth_url}', '_blank')" style="white-space:nowrap">Open</button>
+                                </div>
+                                <div class="text-[11px] text-dark-muted">2. Paste the code you receive:</div>
+                                <div class="flex gap-2">
+                                    <input type="text" id="code-${t.name}" class="auth-input flex-1" placeholder="Paste authorization code here..." />
+                                    <button class="auth-btn auth-btn-success" onclick="submitCode('${t.name}')">Submit</button>
+                                    <button class="auth-btn" style="background:#2a2e3a;color:#e4e4e7" onclick="cancelAuth('${t.name}')">Cancel</button>
+                                </div>
+                            </div>`;
+                    } else if (flow.state === 'exchanging') {
+                        actionHtml = '<div class="mt-2 text-[11px]"><span class="auth-status auth-status-refreshing">Exchanging code...</span></div>';
+                    } else {
+                        actionHtml = `
+                            <div class="mt-2 space-y-2">
+                                <div class="flex gap-2">
+                                    <button class="auth-btn auth-btn-primary" onclick="startAuth('${t.name}')">Authorize</button>
+                                    <button class="auth-btn" style="background:#2a2e3a;color:#e4e4e7" onclick="toggleManual('${t.name}')">Paste Tokens</button>
+                                </div>
+                                <div id="manual-${t.name}" style="display:none" class="space-y-2 p-2 rounded border border-dark-border bg-[#1a1d27]">
+                                    <input type="text" id="manual-access-${t.name}" class="auth-input w-full" placeholder="Access token (sk-ant-oat01-...)" />
+                                    <input type="text" id="manual-refresh-${t.name}" class="auth-input w-full" placeholder="Refresh token (sk-ant-ort01-...) optional" />
+                                    <div class="flex gap-2">
+                                        <button class="auth-btn auth-btn-success" onclick="submitManual('${t.name}')">Save</button>
+                                        <button class="auth-btn" style="background:#2a2e3a;color:#e4e4e7" onclick="toggleManual('${t.name}')">Cancel</button>
+                                    </div>
+                                </div>
+                            </div>`;
+                    }
+
+                    return `
+                        <div class="p-3 rounded border border-dark-border bg-[#0f1117]">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-3">
+                                    <span class="font-mono font-bold text-sm" style="color: ${subColors[t.name] || '#e4e4e7'}">${t.name.toUpperCase()}</span>
+                                    ${statusHtml}
+                                </div>
+                                <span class="text-dark-muted text-[10px]">${t.has_refresh_token ? 'Has refresh token' : 'No refresh token'}</span>
+                            </div>
+                            ${actionHtml}
+                        </div>`;
+                }).join('');
+            } catch (e) {
+                document.getElementById('auth-subs').innerHTML = '<div class="text-red-500 text-xs">Failed to fetch token status</div>';
+            }
+        }
+
+        async function startAuth(subName) {
+            try {
+                const data = await (await fetch(`/admin/oauth/start?sub=${subName}`)).json();
+                authFlows[subName] = { state: 'waiting_code', auth_url: data.auth_url };
+                refreshTokenStatus();
+            } catch (e) {
+                alert('Failed to start auth flow: ' + e.message);
+            }
+        }
+
+        function cancelAuth(subName) {
+            delete authFlows[subName];
+            refreshTokenStatus();
+        }
+
+        async function submitCode(subName) {
+            const codeInput = document.getElementById('code-' + subName);
+            const code = codeInput?.value?.trim();
+            if (!code) { alert('Please paste the authorization code'); return; }
+
+            authFlows[subName] = { state: 'exchanging' };
+            refreshTokenStatus();
+
+            try {
+                const resp = await fetch(`/admin/oauth/callback?sub=${subName}&code=${encodeURIComponent(code)}`, { method: 'POST' });
+                const data = await resp.json();
+                if (resp.ok) {
+                    delete authFlows[subName];
+                    refreshTokenStatus();
+                } else {
+                    authFlows[subName] = { state: 'idle' };
+                    refreshTokenStatus();
+                    alert('Authorization failed: ' + (data.detail || JSON.stringify(data)));
+                }
+            } catch (e) {
+                authFlows[subName] = { state: 'idle' };
+                refreshTokenStatus();
+                alert('Error: ' + e.message);
+            }
+        }
+
+        function toggleManual(subName) {
+            const el = document.getElementById('manual-' + subName);
+            if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+        }
+
+        async function submitManual(subName) {
+            const access = document.getElementById('manual-access-' + subName)?.value?.trim();
+            const refresh = document.getElementById('manual-refresh-' + subName)?.value?.trim();
+
+            if (!access) { alert('Access token is required'); return; }
+
+            try {
+                const resp = await fetch('/admin/oauth/manual', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        subscription: subName,
+                        access_token: access,
+                        refresh_token: refresh || '',
+                    }),
+                });
+                const data = await resp.json();
+                if (resp.ok) {
+                    refreshTokenStatus();
+                } else {
+                    alert('Failed: ' + (data.detail || JSON.stringify(data)));
+                }
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
     </script>
 </body>
 </html>
