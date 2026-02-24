@@ -40,6 +40,8 @@ class ClientStats:
     last_seen: datetime
     current_subscription: Optional[str] = None
     active_requests: int = 0
+    tokens_today: int = 0
+    tokens_week: int = 0
 
 
 @dataclass
@@ -182,30 +184,38 @@ class UsageStorage:
             cutoff = (datetime.utcnow() - timedelta(minutes=active_minutes)).isoformat()
             
             with self._get_conn() as conn:
-                # Get all clients with their totals
+                today = datetime.utcnow().strftime("%Y-%m-%d")
+                week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+                
+                # Get all clients with their totals + today/week breakdowns
                 rows = conn.execute("""
                     SELECT 
                         c.client_id,
                         c.total_requests,
                         c.last_seen,
                         COALESCE(SUM(d.input_tokens), 0) as total_input,
-                        COALESCE(SUM(d.output_tokens), 0) as total_output
+                        COALESCE(SUM(d.output_tokens), 0) as total_output,
+                        COALESCE(SUM(CASE WHEN d.date = ? THEN d.input_tokens + d.output_tokens ELSE 0 END), 0) as tokens_today,
+                        COALESCE(SUM(CASE WHEN d.date >= ? THEN d.input_tokens + d.output_tokens ELSE 0 END), 0) as tokens_week
                     FROM clients c
                     LEFT JOIN daily_usage d ON c.client_id = d.client_id
                     GROUP BY c.client_id
                     ORDER BY c.last_seen DESC
-                """).fetchall()
+                """, (today, week_ago)).fetchall()
                 
                 clients = []
                 for row in rows:
                     last_seen = datetime.fromisoformat(row["last_seen"])
-                    clients.append(ClientStats(
+                    cs = ClientStats(
                         client_id=row["client_id"],
                         total_requests=row["total_requests"],
                         total_input_tokens=row["total_input"],
                         total_output_tokens=row["total_output"],
                         last_seen=last_seen,
-                    ))
+                    )
+                    cs.tokens_today = row["tokens_today"]
+                    cs.tokens_week = row["tokens_week"]
+                    clients.append(cs)
                 
                 return clients
     

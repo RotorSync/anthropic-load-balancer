@@ -320,6 +320,8 @@ async def admin_clients(request: Request):
                 "total_input_tokens": c.total_input_tokens,
                 "total_output_tokens": c.total_output_tokens,
                 "total_tokens": c.total_input_tokens + c.total_output_tokens,
+                "tokens_today": getattr(c, 'tokens_today', 0),
+                "tokens_week": getattr(c, 'tokens_week', 0),
                 "last_seen": c.last_seen.isoformat(),
             }
             for c in clients
@@ -487,6 +489,21 @@ async def admin_oauth_callback(request: Request, sub: str, code: str):
         sub_state = tracker.get_subscription(sub)
         if sub_state and sub_state.auth_failed:
             await tracker.clear_auth_failed(sub_state)
+        # Auto-enable subscription after successful OAuth
+        try:
+            with open(config_path) as f:
+                raw_cfg = json.load(f)
+            for s in raw_cfg.get("subscriptions", []):
+                if s.get("name") == sub and not s.get("enabled", True):
+                    s["enabled"] = True
+                    with open(config_path, "w") as f:
+                        json.dump(raw_cfg, f, indent=2)
+                    new_config = reload_config()
+                    config = new_config
+                    logger.info(f"Auto-enabled subscription after OAuth success")
+                    break
+        except Exception as e:
+            logger.warning(f"Failed to auto-enable: {e}")
         return {
             "status": "authorized",
             "subscription": sub,
