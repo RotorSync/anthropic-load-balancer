@@ -432,9 +432,9 @@ async def admin_add_subscription(request: Request):
     body = await request.json()
 
     name = body.get("name", "").strip()
-    api_key = body.get("api_key", "").strip()
-    if not name or not api_key:
-        raise HTTPException(status_code=400, detail="name and api_key are required")
+    api_key = body.get("api_key", "").strip() or "sk-ant-placeholder-authorize-via-auth-tab"
+    if not name:
+        raise HTTPException(status_code=400, detail="name is required")
 
     if config and any(s.name == name for s in config.subscriptions):
         raise HTTPException(status_code=409, detail=f"Subscription '{name}' already exists")

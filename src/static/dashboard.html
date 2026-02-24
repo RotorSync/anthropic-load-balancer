@@ -239,8 +239,8 @@
                             <input type="text" id="sub-name" class="auth-input" required>
                         </div>
                         <div>
-                            <label class="block text-[11px] text-dark-muted mb-1">API Key</label>
-                            <input type="password" id="sub-api-key" class="auth-input" required>
+                            <label class="block text-[11px] text-dark-muted mb-1">API Key <span class="text-dark-muted font-normal">(optional — use Auth tab to get OAuth tokens)</span></label>
+                            <input type="password" id="sub-api-key" class="auth-input" placeholder="Leave blank, then authorize via Auth tab">
                         </div>
                         <div>
                             <label class="block text-[11px] text-dark-muted mb-1">Max Concurrent</label>
@@ -657,8 +657,8 @@
             document.getElementById('sub-name').value = '';
             document.getElementById('sub-name').disabled = false;
             document.getElementById('sub-api-key').value = '';
-            document.getElementById('sub-api-key').placeholder = 'sk-ant-...';
-            document.getElementById('sub-api-key').required = true;
+            document.getElementById('sub-api-key').placeholder = 'Leave blank, then authorize via Auth tab';
+            document.getElementById('sub-api-key').required = false;
             document.getElementById('sub-max-concurrent').value = 5;
             document.getElementById('sub-priority').value = 1;
             document.getElementById('sub-enabled').checked = true;
@@ -707,12 +707,12 @@
                         body: JSON.stringify(body),
                     });
                 } else {
-                    // Add new
-                    if (!apiKey) { alert('API key is required for new subscriptions'); return; }
+                    // Add new — API key optional, use placeholder if empty (authorize via Auth tab later)
+                    const key = apiKey || 'sk-ant-placeholder-authorize-via-auth-tab';
                     resp = await fetch('/admin/subscriptions', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ name, api_key: apiKey, max_concurrent: maxConcurrent, priority, enabled }),
+                        body: JSON.stringify({ name, api_key: key, max_concurrent: maxConcurrent, priority, enabled }),
                     });
                 }
                 const data = await resp.json();
@@ -767,7 +767,7 @@
                 tbody.innerHTML = data.subscriptions.map(sub => `
                     <tr class="border-b border-dark-border">
                         <td class="p-2 font-mono font-bold" style="color: ${subColors[sub.name] || '#e4e4e7'}">${sub.name}</td>
-                        <td class="p-2 font-mono text-dark-muted text-[10px]">${sub.api_key_masked}</td>
+                        <td class="p-2 font-mono text-[10px] ${sub.api_key_masked.includes('placeholder') ? 'text-amber-500' : 'text-dark-muted'}">${sub.api_key_masked.includes('placeholder') ? '⚠️ Needs Auth' : sub.api_key_masked}</td>
                         <td class="p-2 text-center">${sub.max_concurrent}</td>
                         <td class="p-2 text-center">${sub.priority}</td>
                         <td class="p-2 text-center">
