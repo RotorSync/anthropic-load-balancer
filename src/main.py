@@ -4,6 +4,7 @@ Anthropic Load Balancer - Main FastAPI Application
 A reverse proxy that load balances requests across multiple Anthropic API
 subscriptions to avoid rate limits and maximize throughput.
 """
+import json
 import logging
 import os
 import stat
@@ -386,6 +387,193 @@ async def admin_limits(request: Request):
             return JSONResponse(response.json())
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=502)
+
+
+# ============================================================================
+# Subscription Management Endpoints
+# ============================================================================
+
+@app.get("/admin/subscriptions")
+async def admin_list_subscriptions(request: Request):
+    """List all subscriptions with masked API keys. Local network only."""
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+
+    if config is None:
+        return JSONResponse({"error": "Not initialized"}, status_code=503)
+
+    def mask_key(key: str) -> str:
+        if len(key) > 16:
+            return key[:12] + "..." + key[-4:]
+        return "***"
+
+    subs = []
+    for sub in config.subscriptions:
+        subs.append({
+            "name": sub.name,
+            "api_key_masked": mask_key(sub.api_key),
+            "max_concurrent": sub.max_concurrent,
+            "priority": sub.priority,
+            "enabled": sub.enabled,
+        })
+
+    return {"subscriptions": subs}
+
+
+@app.post("/admin/subscriptions")
+async def admin_add_subscription(request: Request):
+    """Add a new subscription. Local network only."""
+    global config, tracker
+
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+
+    logger = logging.getLogger(__name__)
+    body = await request.json()
+
+    name = body.get("name", "").strip()
+    api_key = body.get("api_key", "").strip()
+    if not name or not api_key:
+        raise HTTPException(status_code=400, detail="name and api_key are required")
+
+    if config and any(s.name == name for s in config.subscriptions):
+        raise HTTPException(status_code=409, detail=f"Subscription '{name}' already exists")
+
+    new_sub = {
+        "name": name,
+        "api_key": api_key,
+        "max_concurrent": int(body.get("max_concurrent", 5)),
+        "priority": int(body.get("priority", 1)),
+        "enabled": bool(body.get("enabled", True)),
+    }
+
+    try:
+        with open(config_path) as f:
+            raw_config = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read config: {e}")
+
+    raw_config.setdefault("subscriptions", []).append(new_sub)
+
+    try:
+        with open(config_path, "w") as f:
+            json.dump(raw_config, f, indent=2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write config: {e}")
+
+    try:
+        new_config = reload_config()
+        tracker = SubscriptionTracker(
+            subscriptions=new_config.subscriptions,
+            cooldown_seconds=new_config.rate_limit.cooldown_seconds,
+        )
+        config = new_config
+        logger.info(f"Added subscription '{name}'")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload: {e}")
+
+    return {"status": "added", "name": name}
+
+
+@app.put("/admin/subscriptions/{name}")
+async def admin_update_subscription(request: Request, name: str):
+    """Update a subscription. Local network only."""
+    global config, tracker
+
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+
+    logger = logging.getLogger(__name__)
+    body = await request.json()
+
+    try:
+        with open(config_path) as f:
+            raw_config = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read config: {e}")
+
+    found = False
+    for sub in raw_config.get("subscriptions", []):
+        if sub.get("name") == name:
+            if "api_key" in body and body["api_key"].strip():
+                sub["api_key"] = body["api_key"].strip()
+            if "max_concurrent" in body:
+                sub["max_concurrent"] = int(body["max_concurrent"])
+            if "priority" in body:
+                sub["priority"] = int(body["priority"])
+            if "enabled" in body:
+                sub["enabled"] = bool(body["enabled"])
+            found = True
+            break
+
+    if not found:
+        raise HTTPException(status_code=404, detail=f"Subscription '{name}' not found")
+
+    try:
+        with open(config_path, "w") as f:
+            json.dump(raw_config, f, indent=2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write config: {e}")
+
+    try:
+        new_config = reload_config()
+        tracker = SubscriptionTracker(
+            subscriptions=new_config.subscriptions,
+            cooldown_seconds=new_config.rate_limit.cooldown_seconds,
+        )
+        config = new_config
+        logger.info(f"Updated subscription '{name}'")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload: {e}")
+
+    return {"status": "updated", "name": name}
+
+
+@app.delete("/admin/subscriptions/{name}")
+async def admin_delete_subscription(request: Request, name: str):
+    """Delete a subscription. Local network only."""
+    global config, tracker
+
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+
+    logger = logging.getLogger(__name__)
+
+    try:
+        with open(config_path) as f:
+            raw_config = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read config: {e}")
+
+    original_count = len(raw_config.get("subscriptions", []))
+    raw_config["subscriptions"] = [
+        s for s in raw_config.get("subscriptions", []) if s.get("name") != name
+    ]
+
+    if len(raw_config["subscriptions"]) == original_count:
+        raise HTTPException(status_code=404, detail=f"Subscription '{name}' not found")
+
+    if len(raw_config["subscriptions"]) == 0:
+        raise HTTPException(status_code=400, detail="Cannot delete last subscription")
+
+    try:
+        with open(config_path, "w") as f:
+            json.dump(raw_config, f, indent=2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write config: {e}")
+
+    try:
+        new_config = reload_config()
+        tracker = SubscriptionTracker(
+            subscriptions=new_config.subscriptions,
+            cooldown_seconds=new_config.rate_limit.cooldown_seconds,
+        )
+        config = new_config
+        logger.info(f"Deleted subscription '{name}'")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reload: {e}")
+
+    return {"status": "deleted", "name": name}
 
 
 @app.get("/admin/dashboard")

@@ -81,6 +81,7 @@
         <!-- Tab Bar -->
         <div class="tab-bar mb-2">
             <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+            <button class="tab-btn" onclick="switchTab('subscriptions')">Subscriptions</button>
             <button class="tab-btn" onclick="switchTab('auth')">Auth</button>
         </div>
 
@@ -196,6 +197,73 @@
         </div>
 
         </div><!-- end tab-dashboard -->
+
+        <!-- Subscriptions Tab -->
+        <div id="tab-subscriptions" class="tab-content">
+            <div class="space-y-3">
+                <!-- Subscriptions List -->
+                <div class="bg-dark-card rounded p-3 border border-dark-border">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-bold">Manage Subscriptions</h2>
+                        <button class="auth-btn auth-btn-primary" onclick="showAddSubscriptionModal()" style="padding: 4px 10px; font-size: 10px;">Add Subscription</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="border-b border-dark-border">
+                                    <th class="text-left p-2 text-dark-muted">Name</th>
+                                    <th class="text-left p-2 text-dark-muted">API Key</th>
+                                    <th class="text-center p-2 text-dark-muted">Max Concurrent</th>
+                                    <th class="text-center p-2 text-dark-muted">Priority</th>
+                                    <th class="text-center p-2 text-dark-muted">Status</th>
+                                    <th class="text-center p-2 text-dark-muted">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="subscriptions-table">
+                                <!-- Populated by JavaScript -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div><!-- end tab-subscriptions -->
+
+        <!-- Add/Edit Subscription Modal -->
+        <div id="subscription-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+            <div class="bg-dark-card border border-dark-border rounded-lg p-4 max-w-md w-full m-4">
+                <h3 id="modal-title" class="text-sm font-bold mb-3">Add Subscription</h3>
+                <form id="subscription-form" onsubmit="saveSubscription(event)">
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-[11px] text-dark-muted mb-1">Name</label>
+                            <input type="text" id="sub-name" class="auth-input" required>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-dark-muted mb-1">API Key</label>
+                            <input type="password" id="sub-api-key" class="auth-input" required>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-dark-muted mb-1">Max Concurrent</label>
+                            <input type="number" id="sub-max-concurrent" class="auth-input" min="1" max="50" value="5" required>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-dark-muted mb-1">Priority</label>
+                            <input type="number" id="sub-priority" class="auth-input" min="1" value="1" required>
+                        </div>
+                        <div>
+                            <label class="flex items-center gap-2 text-[11px] text-dark-muted">
+                                <input type="checkbox" id="sub-enabled" checked>
+                                Enabled
+                            </label>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-4">
+                        <button type="submit" class="auth-btn auth-btn-primary flex-1">Save</button>
+                        <button type="button" onclick="hideModal()" class="auth-btn flex-1" style="background: #2a2e3a;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
         <!-- Auth Tab -->
         <div id="tab-auth" class="tab-content">
@@ -446,6 +514,7 @@
             document.querySelector(`.tab-btn[onclick="switchTab('${tab}')"]`).classList.add('active');
             document.getElementById('tab-' + tab).classList.add('active');
             if (tab === 'auth') refreshTokenStatus();
+            if (tab === 'subscriptions') loadSubscriptions();
         }
 
         // ============================================================
@@ -576,6 +645,151 @@
             const el = document.getElementById('manual-' + subName);
             if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
         }
+
+        // ============================================================
+        // Subscription management
+        // ============================================================
+        let editingSubscription = null;
+
+        function showAddSubscriptionModal() {
+            editingSubscription = null;
+            document.getElementById('modal-title').textContent = 'Add Subscription';
+            document.getElementById('sub-name').value = '';
+            document.getElementById('sub-name').disabled = false;
+            document.getElementById('sub-api-key').value = '';
+            document.getElementById('sub-api-key').placeholder = 'sk-ant-...';
+            document.getElementById('sub-api-key').required = true;
+            document.getElementById('sub-max-concurrent').value = 5;
+            document.getElementById('sub-priority').value = 1;
+            document.getElementById('sub-enabled').checked = true;
+            document.getElementById('subscription-modal').classList.remove('hidden');
+            document.getElementById('subscription-modal').style.display = 'flex';
+        }
+
+        function showEditSubscriptionModal(sub) {
+            editingSubscription = sub.name;
+            document.getElementById('modal-title').textContent = 'Edit: ' + sub.name;
+            document.getElementById('sub-name').value = sub.name;
+            document.getElementById('sub-name').disabled = true;
+            document.getElementById('sub-api-key').value = '';
+            document.getElementById('sub-api-key').placeholder = 'Leave blank to keep current key';
+            document.getElementById('sub-api-key').required = false;
+            document.getElementById('sub-max-concurrent').value = sub.max_concurrent;
+            document.getElementById('sub-priority').value = sub.priority;
+            document.getElementById('sub-enabled').checked = sub.enabled;
+            document.getElementById('subscription-modal').classList.remove('hidden');
+            document.getElementById('subscription-modal').style.display = 'flex';
+        }
+
+        function hideModal() {
+            document.getElementById('subscription-modal').classList.add('hidden');
+            document.getElementById('subscription-modal').style.display = 'none';
+            editingSubscription = null;
+        }
+
+        async function saveSubscription(event) {
+            event.preventDefault();
+            const name = document.getElementById('sub-name').value.trim();
+            const apiKey = document.getElementById('sub-api-key').value.trim();
+            const maxConcurrent = parseInt(document.getElementById('sub-max-concurrent').value);
+            const priority = parseInt(document.getElementById('sub-priority').value);
+            const enabled = document.getElementById('sub-enabled').checked;
+
+            try {
+                let resp;
+                if (editingSubscription) {
+                    // Update existing
+                    const body = { max_concurrent: maxConcurrent, priority, enabled };
+                    if (apiKey) body.api_key = apiKey;
+                    resp = await fetch(`/admin/subscriptions/${encodeURIComponent(editingSubscription)}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                    });
+                } else {
+                    // Add new
+                    if (!apiKey) { alert('API key is required for new subscriptions'); return; }
+                    resp = await fetch('/admin/subscriptions', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name, api_key: apiKey, max_concurrent: maxConcurrent, priority, enabled }),
+                    });
+                }
+                const data = await resp.json();
+                if (!resp.ok) {
+                    alert('Error: ' + (data.detail || JSON.stringify(data)));
+                    return;
+                }
+                hideModal();
+                loadSubscriptions();
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        async function toggleSubscription(name, currentEnabled) {
+            try {
+                const resp = await fetch(`/admin/subscriptions/${encodeURIComponent(name)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: !currentEnabled }),
+                });
+                if (resp.ok) loadSubscriptions();
+                else {
+                    const data = await resp.json();
+                    alert('Error: ' + (data.detail || 'Failed'));
+                }
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function deleteSubscription(name) {
+            if (!confirm(`Delete subscription "${name}"? This cannot be undone.`)) return;
+            try {
+                const resp = await fetch(`/admin/subscriptions/${encodeURIComponent(name)}`, { method: 'DELETE' });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    alert('Error: ' + (data.detail || 'Failed'));
+                    return;
+                }
+                loadSubscriptions();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function loadSubscriptions() {
+            try {
+                const resp = await fetch('/admin/subscriptions');
+                const data = await resp.json();
+                const tbody = document.getElementById('subscriptions-table');
+                if (!data.subscriptions || data.subscriptions.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="text-center text-dark-muted p-4">No subscriptions</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = data.subscriptions.map(sub => `
+                    <tr class="border-b border-dark-border">
+                        <td class="p-2 font-mono font-bold" style="color: ${subColors[sub.name] || '#e4e4e7'}">${sub.name}</td>
+                        <td class="p-2 font-mono text-dark-muted text-[10px]">${sub.api_key_masked}</td>
+                        <td class="p-2 text-center">${sub.max_concurrent}</td>
+                        <td class="p-2 text-center">${sub.priority}</td>
+                        <td class="p-2 text-center">
+                            <span class="auth-status ${sub.enabled ? 'auth-status-ok' : 'auth-status-expired'}">${sub.enabled ? 'Enabled' : 'Disabled'}</span>
+                        </td>
+                        <td class="p-2 text-center">
+                            <div class="flex gap-1 justify-center">
+                                <button class="auth-btn" style="background:#2a2e3a;color:#e4e4e7;padding:2px 8px;font-size:10px;" onclick='toggleSubscription("${sub.name}", ${sub.enabled})'>${sub.enabled ? 'Disable' : 'Enable'}</button>
+                                <button class="auth-btn" style="background:#2a2e3a;color:#e4e4e7;padding:2px 8px;font-size:10px;" onclick='showEditSubscriptionModal(${JSON.stringify(sub).replace(/'/g, "&#39;")})'>Edit</button>
+                                <button class="auth-btn auth-btn-danger" style="padding:2px 8px;font-size:10px;" onclick='deleteSubscription("${sub.name}")'>Delete</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (e) {
+                document.getElementById('subscriptions-table').innerHTML = '<tr><td colspan="6" class="text-center text-red-500 p-4">Failed to load</td></tr>';
+            }
+        }
+
+        // Load subscriptions when switching to that tab
+        const origSwitchTab = switchTab;
+        // We'll override switchTab inline below
 
         async function submitManual(subName) {
             const access = document.getElementById('manual-access-' + subName)?.value?.trim();
