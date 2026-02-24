@@ -81,6 +81,7 @@
         <!-- Tab Bar -->
         <div class="tab-bar mb-2">
             <button class="tab-btn active" onclick="switchTab('dashboard')">Dashboard</button>
+            <button class="tab-btn" onclick="switchTab('subscriptions')">Subscriptions</button>
             <button class="tab-btn" onclick="switchTab('auth')">Auth</button>
         </div>
 
@@ -196,6 +197,70 @@
         </div>
 
         </div><!-- end tab-dashboard -->
+
+                <!-- Subscriptions Tab -->
+        <div id="tab-subscriptions" class="tab-content">
+            <div class="space-y-3">
+                <div class="bg-dark-card rounded p-3 border border-dark-border">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-bold">Manage Subscriptions</h2>
+                        <button class="auth-btn auth-btn-primary" onclick="showAddSubscriptionModal()" style="padding: 4px 10px; font-size: 10px;">Add Subscription</button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead>
+                                <tr class="border-b border-dark-border">
+                                    <th class="text-left p-2 text-dark-muted">Name</th>
+                                    <th class="text-left p-2 text-dark-muted">API Key</th>
+                                    <th class="text-center p-2 text-dark-muted">Max Concurrent</th>
+                                    <th class="text-center p-2 text-dark-muted">Priority</th>
+                                    <th class="text-center p-2 text-dark-muted">Status</th>
+                                    <th class="text-center p-2 text-dark-muted">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="subscriptions-table"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add/Edit Subscription Modal -->
+        <div id="subscription-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display:none">
+            <div class="bg-dark-card border border-dark-border rounded-lg p-4 max-w-md w-full m-4">
+                <h3 id="modal-title" class="text-sm font-bold mb-3">Add Subscription</h3>
+                <form id="subscription-form" onsubmit="saveSubscription(event)">
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-[11px] text-dark-muted mb-1">Name</label>
+                            <input type="text" id="sub-name" class="auth-input" required>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-dark-muted mb-1">API Key <span class="text-dark-muted font-normal">(optional — use Auth tab to get OAuth tokens)</span></label>
+                            <input type="password" id="sub-api-key" class="auth-input" placeholder="Leave blank, then authorize via Auth tab">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-dark-muted mb-1">Max Concurrent</label>
+                            <input type="number" id="sub-max-concurrent" class="auth-input" min="1" max="50" value="5" required>
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-dark-muted mb-1">Priority</label>
+                            <input type="number" id="sub-priority" class="auth-input" min="1" value="1" required>
+                        </div>
+                        <div>
+                            <label class="flex items-center gap-2 text-[11px] text-dark-muted">
+                                <input type="checkbox" id="sub-enabled" checked>
+                                Enabled
+                            </label>
+                        </div>
+                    </div>
+                    <div class="flex gap-2 mt-4">
+                        <button type="submit" class="auth-btn auth-btn-primary flex-1">Save</button>
+                        <button type="button" onclick="hideModal()" class="auth-btn flex-1" style="background: #2a2e3a;">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </div>
 
         <!-- Auth Tab -->
         <div id="tab-auth" class="tab-content">
