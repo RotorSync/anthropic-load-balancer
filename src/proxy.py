@@ -15,6 +15,7 @@ from .tracker import SubscriptionTracker, SubscriptionState
 
 if TYPE_CHECKING:
     from .storage import UsageStorage
+    from .oauth import OAuthManager
 
 logger = logging.getLogger(__name__)
 
@@ -92,10 +93,12 @@ class AnthropicProxy:
         tracker: SubscriptionTracker, 
         timeout: float = 300.0,
         storage: Optional["UsageStorage"] = None,
+        oauth_manager: Optional["OAuthManager"] = None,
     ):
         self.tracker = tracker
         self.timeout = timeout
         self.storage = storage
+        self.oauth_manager = oauth_manager
         self._client: httpx.AsyncClient | None = None
     
     async def startup(self):
@@ -130,11 +133,6 @@ class AnthropicProxy:
         try:
             # Get bot profile
             context["bot_profile"] = await self.storage.get_bot_profile(client_id)
-            
-            # Get recent request rates per subscription
-            for sub in self.tracker.subscriptions:
-                rate = await self.storage.get_subscription_request_rate(sub.name, minutes=1)
-                context["subscription_rates"][sub.name] = rate
             
             # Get account utilization for quota pacing
             context["account_utilization"] = await self._fetch_account_utilization()
@@ -215,6 +213,8 @@ class AnthropicProxy:
         if subscription.api_key.startswith("sk-ant-oat"):
             # OAuth token - use Bearer auth
             headers["authorization"] = f"Bearer {subscription.api_key}"
+            # OAuth requires the beta header
+            headers["anthropic-beta"] = "oauth-2025-04-20"
             headers.pop("x-api-key", None)
         elif subscription.api_key.startswith("sk-ant-"):
             # Regular API key
@@ -223,6 +223,8 @@ class AnthropicProxy:
         else:
             # Unknown format - try Bearer (safer default for OAuth)
             headers["authorization"] = f"Bearer {subscription.api_key}"
+            # OAuth requires the beta header
+            headers["anthropic-beta"] = "oauth-2025-04-20"
             headers.pop("x-api-key", None)
         
         return headers
@@ -267,6 +269,15 @@ class AnthropicProxy:
                 )
             except Exception as e:
                 logger.warning(f"Failed to record usage: {e}")
+    
+    async def _try_refresh_token(self, subscription: SubscriptionState) -> bool:
+        """Attempt OAuth token refresh for a subscription. Returns True if successful."""
+        if not self.oauth_manager or not subscription.config.is_oauth:
+            return False
+        refreshed = await self.oauth_manager.refresh_token(subscription.config)
+        if refreshed:
+            await self.tracker.clear_auth_failed(subscription)
+        return refreshed
     
     async def _stream_response(
         self,
@@ -417,6 +428,22 @@ class AnthropicProxy:
                             media_type="application/json",
                         )
                     
+                    # Handle auth failures (expired OAuth tokens)
+                    if response.status_code in (401, 403):
+                        await response.aclose()
+                        refreshed = await self._try_refresh_token(subscription)
+                        if refreshed:
+                            logger.info(f"[{request_id}] Token refreshed for {subscription.name}, client should retry")
+                        else:
+                            await self.tracker.mark_auth_failed(subscription)
+                            logger.error(f"[{request_id}] AUTH FAILED from {subscription.name} - token expired")
+                        # Can't replay a stream, tell client to retry
+                        return Response(
+                            content='{"error": {"type": "overloaded", "message": "Token refreshed, please retry your request."}}',
+                            status_code=503,
+                            media_type="application/json",
+                        )
+                    
                     logger.info(f"[{request_id}] <- {subscription.name} {response.status_code} (client: {client_id})")
                     
                     return StreamingResponse(
@@ -443,7 +470,7 @@ class AnthropicProxy:
                         media_type="application/json",
                     )
         
-        # Non-streaming: retry on 429
+        # Non-streaming: retry on 429 and 401
         excluded: set[str] = set()
         last_error_response: Response | None = None
         
@@ -487,6 +514,18 @@ class AnthropicProxy:
                         excluded.add(subscription.name)
                         logger.warning(f"[{request_id}] 429 from {subscription.name}, will retry")
                         continue  # Try next subscription
+                    
+                    # Handle auth failures — attempt refresh, then retry
+                    if response.status_code in (401, 403):
+                        refreshed = await self._try_refresh_token(subscription)
+                        if refreshed:
+                            logger.info(f"[{request_id}] Token refreshed for {subscription.name}, retrying")
+                            continue  # Retry with fresh token (don't exclude)
+                        else:
+                            await self.tracker.mark_auth_failed(subscription)
+                            excluded.add(subscription.name)
+                            logger.error(f"[{request_id}] {response.status_code} from {subscription.name}, refresh failed")
+                            continue  # Try next subscription
                     
                     if response.status_code >= 500:
                         await self.tracker.record_error(subscription)

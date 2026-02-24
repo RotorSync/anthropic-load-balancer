@@ -9,6 +9,7 @@ import logging
 import os
 import stat
 import sys
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -21,6 +22,7 @@ from .config import load_config, Config, reload_config
 from .tracker import SubscriptionTracker
 from .proxy import AnthropicProxy
 from .storage import UsageStorage
+from .oauth import OAuthManager
 
 # Configure logging
 def setup_logging(config: Config):
@@ -86,13 +88,14 @@ config: Config | None = None
 tracker: SubscriptionTracker | None = None
 proxy: AnthropicProxy | None = None
 storage: UsageStorage | None = None
+oauth_manager: OAuthManager | None = None
 config_path: Path | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    global config, tracker, proxy, storage, config_path
+    global config, tracker, proxy, storage, oauth_manager, config_path
     
     # Startup
     logger = logging.getLogger(__name__)
@@ -130,19 +133,28 @@ async def lifespan(app: FastAPI):
     # Initialize storage
     storage = UsageStorage()
     
+    # Initialize OAuth manager
+    oauth_manager = OAuthManager(config=config, config_path=str(config_path))
+    await oauth_manager.startup()
+    
     # Initialize proxy
-    proxy = AnthropicProxy(tracker=tracker, storage=storage)
+    proxy = AnthropicProxy(tracker=tracker, storage=storage, oauth_manager=oauth_manager)
     await proxy.startup()
     
     # Log subscription info (names only, not tokens!)
     for sub in config.subscriptions:
         status = "enabled" if sub.enabled else "disabled"
-        logger.info(f"  Subscription '{sub.name}': max_concurrent={sub.max_concurrent}, priority={sub.priority}, {status}")
+        oauth_info = " (OAuth)" if sub.is_oauth else ""
+        logger.info(f"  Subscription '{sub.name}': max_concurrent={sub.max_concurrent}, priority={sub.priority}, {status}{oauth_info}")
     
     logger.info(f"Server listening on {config.server.host}:{config.server.port}")
     logger.info("=" * 60)
     
-    # Start background task to update profiles and utilization
+    # Run initial OAuth refresh pass at startup for fast recovery
+    logger.info("Running initial OAuth token refresh pass...")
+    await oauth_manager.proactive_refresh_pass()
+    
+    # Start background tasks
     import asyncio
     import httpx
     
@@ -150,10 +162,6 @@ async def lifespan(app: FastAPI):
         """Background task to update bot profiles and utilization data."""
         while True:
             try:
-                # Update bot profiles
-                profiles = await storage.get_bot_profiles()
-                proxy.set_bot_profiles(profiles)
-                
                 # Update utilization from usage API
                 try:
                     async with httpx.AsyncClient(timeout=10.0) as client:
@@ -176,21 +184,42 @@ async def lifespan(app: FastAPI):
             
             await asyncio.sleep(60)  # Update every 60 seconds
     
-    # Start background task
+    async def proactive_token_refresh():
+        """Background task to refresh OAuth tokens before they expire."""
+        while True:
+            try:
+                await oauth_manager.proactive_refresh_pass()
+                # Clear auth_failed for any subscriptions that now have valid tokens
+                for sub_state in tracker.subscriptions:
+                    if sub_state.auth_failed and sub_state.config.is_oauth:
+                        if not oauth_manager.needs_refresh(sub_state.config):
+                            await tracker.clear_auth_failed(sub_state)
+            except Exception as e:
+                logger.error(f"Error in token refresh task: {e}")
+            await asyncio.sleep(60)
+    
+    # Start background tasks
     update_task = asyncio.create_task(update_profiles_and_utilization())
+    refresh_task = asyncio.create_task(proactive_token_refresh())
     
     yield
     
-    # Cancel background task
+    # Cancel background tasks
     update_task.cancel()
+    refresh_task.cancel()
     try:
         await update_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await refresh_task
     except asyncio.CancelledError:
         pass
     
     # Shutdown
     logger.info("Shutting down...")
     await proxy.shutdown()
+    await oauth_manager.shutdown()
     logger.info("Shutdown complete")
 
 
@@ -360,7 +389,7 @@ async def admin_flow(request: Request, minutes: int = 5):
     """
     Get token flow data for visualization.
     
-    Returns client → subscription flows for the specified time window.
+    Returns client -> subscription flows for the specified time window.
     """
     if not is_local_network(request):
         raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
@@ -387,6 +416,141 @@ async def admin_limits(request: Request):
             return JSONResponse(response.json())
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=502)
+
+
+@app.get("/admin/tokens")
+async def admin_tokens(request: Request):
+    """Get OAuth token status for all subscriptions. Localhost only."""
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+    
+    if tracker is None:
+        return JSONResponse({"error": "Not initialized"}, status_code=503)
+    
+    now = time.time()
+    tokens = []
+    for sub_state in tracker.subscriptions:
+        info = {
+            "name": sub_state.name,
+            "is_oauth": sub_state.config.is_oauth,
+            "auth_failed": sub_state.auth_failed,
+            "enabled": sub_state.enabled,
+        }
+        if sub_state.config.is_oauth:
+            expires_at = sub_state.config.token_expires_at or 0
+            info["token_expires_at"] = expires_at
+            info["expires_in_seconds"] = max(0, int(expires_at - now))
+            info["has_refresh_token"] = bool(sub_state.config.refresh_token)
+        tokens.append(info)
+    
+    return {"tokens": tokens, "timestamp": datetime.utcnow().isoformat()}
+
+
+@app.get("/admin/oauth/start")
+async def admin_oauth_start(request: Request, sub: str):
+    """Start OAuth flow for a subscription. Returns URL to open in browser."""
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+
+    if oauth_manager is None or config is None:
+        return JSONResponse({"error": "Not initialized"}, status_code=503)
+
+    # Verify subscription exists
+    sub_names = [s.name for s in config.subscriptions]
+    if sub not in sub_names:
+        raise HTTPException(status_code=404, detail=f"Subscription '{sub}' not found. Available: {sub_names}")
+
+    auth_url = oauth_manager.start_auth(sub)
+    return {
+        "subscription": sub,
+        "auth_url": auth_url,
+        "instructions": "Open auth_url in your browser, log in, then copy the code from the callback page and POST it to /admin/oauth/callback",
+    }
+
+
+@app.post("/admin/oauth/callback")
+async def admin_oauth_callback(request: Request, sub: str, code: str):
+    """Exchange OAuth code for tokens and store them for a subscription."""
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+
+    if oauth_manager is None or tracker is None:
+        return JSONResponse({"error": "Not initialized"}, status_code=503)
+
+    result = await oauth_manager.exchange_code(sub, code)
+
+    if result["success"]:
+        # Clear auth_failed if it was set
+        sub_state = tracker.get_subscription(sub)
+        if sub_state and sub_state.auth_failed:
+            await tracker.clear_auth_failed(sub_state)
+        return {
+            "status": "authorized",
+            "subscription": sub,
+            "expires_in": result["expires_in"],
+            "message": f"Tokens stored. {sub} is now active with auto-refresh.",
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+
+@app.post("/admin/oauth/manual")
+async def admin_oauth_manual(request: Request):
+    """Manually set OAuth tokens for a subscription. Localhost only."""
+    if not is_local_network(request):
+        raise HTTPException(status_code=403, detail="Admin endpoints are localhost only")
+
+    if config is None or tracker is None:
+        return JSONResponse({"error": "Not initialized"}, status_code=503)
+
+    from .config import save_config
+    body = await request.json()
+    sub_name = body.get("subscription")
+    access_token = body.get("access_token", "").strip()
+    refresh_token = body.get("refresh_token", "").strip()
+
+    if not sub_name or not access_token:
+        raise HTTPException(status_code=400, detail="subscription and access_token are required")
+
+    # Find subscription
+    sub_config = None
+    for sub in config.subscriptions:
+        if sub.name == sub_name:
+            sub_config = sub
+            break
+
+    if not sub_config:
+        sub_names = [s.name for s in config.subscriptions]
+        raise HTTPException(status_code=404, detail=f"Subscription '{sub_name}' not found. Available: {sub_names}")
+
+    # Update tokens
+    sub_config.api_key = access_token
+    if refresh_token:
+        sub_config.refresh_token = refresh_token
+        sub_config.token_expires_at = time.time() + 3600  # Assume 1h, refresh will update
+    else:
+        # No refresh token — clear OAuth fields so it behaves like a static key
+        sub_config.refresh_token = None
+        sub_config.token_expires_at = None
+
+    # Persist
+    save_config(config, str(config_path))
+
+    # Clear auth_failed
+    sub_state = tracker.get_subscription(sub_name)
+    if sub_state and sub_state.auth_failed:
+        await tracker.clear_auth_failed(sub_state)
+
+    logger = logging.getLogger(__name__)
+    has_refresh = bool(refresh_token)
+    logger.info(f"{sub_name}: manual token update (refresh_token: {has_refresh})")
+
+    return {
+        "status": "updated",
+        "subscription": sub_name,
+        "has_refresh_token": has_refresh,
+        "message": f"Tokens set for {sub_name}." + (" Auto-refresh enabled." if has_refresh else " No refresh token — token will not auto-refresh."),
+    }
 
 
 # ============================================================================
@@ -576,6 +740,7 @@ async def admin_delete_subscription(request: Request, name: str):
     return {"status": "deleted", "name": name}
 
 
+
 @app.get("/admin/dashboard")
 async def admin_dashboard(request: Request):
     """Serve the dashboard UI. Localhost only."""
@@ -601,6 +766,9 @@ async def root():
             "dashboard": "/admin/dashboard (localhost only)",
             "clients": "/admin/clients (localhost only)",
             "usage": "/admin/usage?period=day|week|month (localhost only)",
+            "tokens": "/admin/tokens (localhost only)",
+            "oauth_start": "/admin/oauth/start?sub=NAME (localhost only)",
+            "oauth_callback": "/admin/oauth/callback?sub=NAME&code=CODE (localhost only)",
             "reload": "/admin/reload (localhost only)",
             "proxy": "/v1/*",
         },

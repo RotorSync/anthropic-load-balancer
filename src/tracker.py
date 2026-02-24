@@ -21,6 +21,7 @@ class SubscriptionState:
     total_requests: int = 0
     total_errors: int = 0
     last_429_at: Optional[float] = None
+    auth_failed: bool = False
     _lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     
     @property
@@ -56,7 +57,7 @@ class SubscriptionState:
     
     def to_dict(self, cooldown_seconds: int) -> dict:
         """Serialize state for status endpoint."""
-        return {
+        d = {
             "name": self.name,
             "active_connections": self.active_connections,
             "max_concurrent": self.max_concurrent,
@@ -65,8 +66,13 @@ class SubscriptionState:
             "cooldown_remaining": max(0, int(cooldown_seconds - (time.time() - (self.last_429_at or 0)))) if self.last_429_at else 0,
             "total_requests": self.total_requests,
             "total_errors": self.total_errors,
+            "auth_failed": self.auth_failed,
             "enabled": self.enabled,
         }
+        if self.config.is_oauth:
+            expires_at = self.config.token_expires_at or 0
+            d["token_expires_in"] = max(0, int(expires_at - time.time()))
+        return d
 
 
 class SubscriptionTracker:
@@ -131,6 +137,11 @@ class SubscriptionTracker:
                 # Skip disabled
                 if not state.enabled:
                     logger.debug(f"Skipping {state.name}: disabled")
+                    continue
+                
+                # Skip auth-failed subscriptions
+                if state.auth_failed:
+                    logger.debug(f"Skipping {state.name}: auth failed (token expired)")
                     continue
                 
                 # Skip at capacity
@@ -281,6 +292,23 @@ class SubscriptionTracker:
         """Record a non-429 error."""
         async with subscription._lock:
             subscription.total_errors += 1
+    
+    async def mark_auth_failed(self, subscription: SubscriptionState):
+        """Mark a subscription as having authentication failure (expired token)."""
+        async with subscription._lock:
+            if not subscription.auth_failed:
+                subscription.auth_failed = True
+                subscription.total_errors += 1
+                logger.error(
+                    f"{subscription.name}: AUTH FAILED (401) - subscription disabled until token refresh"
+                )
+    
+    async def clear_auth_failed(self, subscription: SubscriptionState):
+        """Clear auth_failed flag after successful token refresh."""
+        async with subscription._lock:
+            if subscription.auth_failed:
+                subscription.auth_failed = False
+                logger.info(f"{subscription.name}: auth_failed cleared after token refresh")
     
     def get_status(self) -> dict:
         """Get current status of all subscriptions (not thread-safe, use get_status_safe)."""

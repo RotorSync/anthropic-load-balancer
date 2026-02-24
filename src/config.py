@@ -4,16 +4,27 @@ Configuration management for the load balancer.
 import json
 from pathlib import Path
 from typing import Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SubscriptionConfig(BaseModel):
     """Configuration for a single Anthropic subscription."""
+    model_config = ConfigDict(frozen=False)
+
     name: str
     api_key: str
     max_concurrent: int = Field(default=5, ge=1, le=50)
     priority: int = Field(default=1, ge=1)
     enabled: bool = True
+
+    # OAuth refresh fields (absent for regular API key subscriptions)
+    refresh_token: Optional[str] = None
+    token_expires_at: Optional[float] = None  # Unix timestamp
+
+    @property
+    def is_oauth(self) -> bool:
+        """Whether this subscription uses OAuth tokens that can be refreshed."""
+        return self.refresh_token is not None
 
 
 class ServerConfig(BaseModel):
@@ -80,6 +91,24 @@ def load_config(path: Optional[str] = None) -> Config:
         data = json.load(f)
     
     return Config(**data)
+
+
+def save_config(config: Config, path: Optional[str] = None):
+    """
+    Persist config back to disk with atomic write.
+    
+    Uses tmp file + rename to avoid corruption on crash.
+    """
+    if path is None:
+        path = Path(__file__).parent.parent / "config.json"
+    else:
+        path = Path(path)
+
+    tmp_path = path.with_suffix(".json.tmp")
+    with open(tmp_path, "w") as f:
+        json.dump(config.model_dump(exclude_none=True), f, indent=2)
+        f.write("\n")
+    tmp_path.rename(path)
 
 
 # Global config instance (loaded on import if available, otherwise None)
