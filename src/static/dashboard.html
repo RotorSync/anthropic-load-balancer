@@ -183,7 +183,7 @@
         </div>
 
         <!-- Token Flow - Full Width -->
-        <div class="flow-section bg-dark-card rounded border border-dark-border flex flex-col" style="height: 200px; min-height: 200px;">
+        <div id="flow-section" class="flow-section bg-dark-card rounded border border-dark-border flex flex-col" style="min-height: 200px;">
             <div class="px-2 py-1 border-b border-dark-border flex justify-between items-center flex-wrap gap-1">
                 <h2 class="font-semibold text-[11px]">Token Flow</h2>
                 <div class="flex gap-2 text-[10px] text-dark-muted">
@@ -309,7 +309,14 @@
 
     <script>
         let currentPeriod = 'week', usageChart = null;
-        const subColors = { 'hh': '#3b82f6', 'cam': '#22c55e', 'norm': '#f59e0b', 'headings2': '#8b5cf6' };
+        // Dynamic subscription colors - auto-assigns colors to any subscription
+        const colorPalette = ['#3b82f6', '#22c55e', '#f59e0b', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16', '#e879f9'];
+        let subColors = {};
+        function updateSubColors(subNames) {
+            subNames.forEach((name, i) => {
+                if (!subColors[name]) subColors[name] = colorPalette[i % colorPalette.length];
+            });
+        }
         const clientColors = ['#06b6d4', '#ec4899', '#84cc16', '#f97316', '#6366f1'];
 
         function formatNumber(n) { if (n >= 1e6) return (n/1e6).toFixed(1)+'M'; if (n >= 1e3) return (n/1e3).toFixed(1)+'k'; return n.toString(); }
@@ -344,12 +351,12 @@
                 if (currentPeriod === 'week') document.getElementById('tokens-week').textContent = formatNumber(total);
                 const ctx = document.getElementById('usage-chart').getContext('2d'); if (usageChart) usageChart.destroy();
                 const subData = data.by_subscription || {};
-                const subLabels = Object.keys(subColors);
+                const subLabels = Object.keys(subTotals).length > 0 ? Object.keys(subTotals) : Object.keys(subColors);
                 const subValues = subLabels.map(s => { const d = subData[s]; return typeof d==='object' ? (d.input_tokens||0)+(d.output_tokens||0) : Number(d)||0; });
                 usageChart = new Chart(ctx, { type: 'bar', data: { labels: subLabels.map(s => s.toUpperCase()), datasets: [{ data: subValues, backgroundColor: subLabels.map(s => subColors[s]), borderRadius: 3 }] }, options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, scales: { x: { grid: { color: '#2a2e3a' }, ticks: { color: '#71717a', font: { size: 8 }, callback: v => formatNumber(v) } }, y: { grid: { display: false }, ticks: { color: '#e4e4e7', font: { size: 9, weight: 'bold' } } } }, plugins: { legend: { display: false } } } });
                 const bySubData = data.by_subscription || {}, subTotals = {}; for (const [s,i] of Object.entries(bySubData)) subTotals[s] = typeof i==='object' ? (i.input_tokens||0)+(i.output_tokens||0) : Number(i)||0;
                 const maxSub = Math.max(...Object.values(subTotals), 1);
-                document.getElementById('usage-by-sub').innerHTML = Object.entries(subColors).map(([sub,color]) => { const val = subTotals[sub]||0, pct = (val/maxSub)*100, shortSub = sub.length > 4 ? sub.slice(0,4) : sub; return `<div class="flex items-center gap-1 whitespace-nowrap"><span class="w-8 truncate">${shortSub}</span><div class="flex-1 bg-dark-border rounded-full h-1"><div style="width:${pct}%;background:${color}" class="h-full rounded-full"></div></div><span class="text-dark-muted w-6 text-right">${formatNumber(val)}</span></div>`; }).join('');
+                const allSubs = {...subColors}; Object.keys(subTotals).forEach(s => { if (!allSubs[s]) allSubs[s] = subColors[s] || colorPalette[Object.keys(allSubs).length % colorPalette.length]; }); document.getElementById('usage-by-sub').innerHTML = Object.entries(allSubs).map(([sub,color]) => { const val = subTotals[sub]||0, pct = (val/maxSub)*100, shortSub = sub.length > 4 ? sub.slice(0,4) : sub; return `<div class="flex items-center gap-1 whitespace-nowrap"><span class="w-8 truncate">${shortSub}</span><div class="flex-1 bg-dark-border rounded-full h-1"><div style="width:${pct}%;background:${color}" class="h-full rounded-full"></div></div><span class="text-dark-muted w-6 text-right">${formatNumber(val)}</span></div>`; }).join('');
                 const byClientData = data.by_client || {}, clientTotals = {}; for (const [c,i] of Object.entries(byClientData)) clientTotals[c] = typeof i==='object' ? (i.input_tokens||0)+(i.output_tokens||0) : Number(i)||0;
                 const clientEntries = Object.entries(clientTotals).sort((a,b) => b[1]-a[1]), maxClient = clientEntries[0]?.[1]||1;
                 document.getElementById('usage-by-client').innerHTML = clientEntries.length===0 ? '<div class="text-dark-muted">—</div>' : clientEntries.slice(0,4).map(([c,val],i) => { const pct = (val/maxClient)*100, color = clientColors[i%clientColors.length]; return `<div class="flex items-center gap-1"><span class="w-10 font-mono truncate">${c}</span><div class="flex-1 bg-dark-border rounded-full h-1"><div style="width:${pct}%;background:${color}" class="h-full rounded-full"></div></div><span class="text-dark-muted w-6 text-right">${formatNumber(val)}</span></div>`; }).join('');
@@ -424,7 +431,7 @@
 
         function spawnParticle(ci,si,isIn,size) {
             const r = flowCanvas.getBoundingClientRect(), w=r.width, h=r.height, cx=w/2, cy=h/2;
-            const clientY = 18 + ci*30, subY = 18 + si*35;
+            const cSpacing = Math.min(30, (h-36) / Math.max(flowClients.length, 1)); const sSpacing = Math.min(35, (h-36) / Math.max(flowSubs.length, 1)); const clientY = 18 + ci*cSpacing, subY = 18 + si*sSpacing;
             const sx = isIn?70:cx, sy = isIn?clientY:cy, ex = isIn?cx:w-70, ey = isIn?cy:subY;
             const clientColor = clientColors[ci] || '#06b6d4';
             const rgbMatch = clientColor.match(/^#([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
@@ -439,7 +446,12 @@
                 fetch('/admin/flow?minutes=1').then(r=>r.json())
             ])
             .then(([cd, fd, recentFd]) => {
-                flowSubs = cd.live.subscriptions.map(s => s.name);
+                flowSubs = cd.live.subscriptions.map(s => s.name); updateSubColors(flowSubs);
+                // Resize flow section to fit all items
+                const maxItems = Math.max(flowClients.length, flowSubs.length);
+                const neededHeight = Math.max(200, maxItems * 40 + 36);
+                document.getElementById('flow-section').style.height = neededHeight + 'px';
+                resizeFlowCanvas();
                 const flows = fd.flows || [], cs = new Set(); flows.forEach(f => cs.add(f.from));
                 flowClients = Array.from(cs).slice(0, 5);
                 const now = Date.now();
@@ -462,10 +474,10 @@
             const r = flowCanvas.getBoundingClientRect(), w=r.width, h=r.height, cx=w/2, cy=h/2;
             flowCtx.clearRect(0,0,w,h);
             flowCtx.strokeStyle = 'rgba(42,46,58,0.4)'; flowCtx.lineWidth = 1;
-            flowClients.forEach((c,i) => { const y=18+i*30; flowCtx.beginPath(); flowCtx.moveTo(70,y); flowCtx.quadraticCurveTo(cx-40,y,cx,cy); flowCtx.stroke(); });
-            flowSubs.forEach((s,i) => { const y=18+i*35; flowCtx.beginPath(); flowCtx.moveTo(cx,cy); flowCtx.quadraticCurveTo(cx+40,y,w-70,y); flowCtx.stroke(); });
+            const clientSpacing = Math.min(30, (h-36) / Math.max(flowClients.length, 1)); flowClients.forEach((c,i) => { const y=18+i*clientSpacing; flowCtx.beginPath(); flowCtx.moveTo(70,y); flowCtx.quadraticCurveTo(cx-40,y,cx,cy); flowCtx.stroke(); });
+            const subSpacing = Math.min(35, (h-36) / Math.max(flowSubs.length, 1)); flowSubs.forEach((s,i) => { const y=18+i*subSpacing; flowCtx.beginPath(); flowCtx.moveTo(cx,cy); flowCtx.quadraticCurveTo(cx+40,y,w-70,y); flowCtx.stroke(); });
             flowClients.forEach((c,i) => { 
-                const y=18+i*30;
+                const y=18+i*clientSpacing;
                 const isActive = activeClients[c];
                 const clientColor = clientColors[i] || '#06b6d4';
                 if (isActive) {
@@ -487,7 +499,7 @@
             flowCtx.fillStyle='#1a1d27'; flowCtx.strokeStyle='#3b82f6'; flowCtx.lineWidth=2; flowCtx.beginPath(); flowCtx.arc(cx,cy,14,0,Math.PI*2); flowCtx.fill(); flowCtx.stroke();
             flowCtx.fillStyle='#e4e4e7'; flowCtx.font='bold 9px sans-serif'; flowCtx.textAlign='center'; flowCtx.fillText('LB',cx,cy+3);
             flowSubs.forEach((s,i) => { 
-                const y=18+i*35, color=subColors[s]||'#666'; 
+                const y=18+i*subSpacing, color=subColors[s]||'#666'; 
                 flowCtx.fillStyle='#1a1d27'; flowCtx.strokeStyle=color; flowCtx.lineWidth=2; 
                 flowCtx.beginPath(); flowCtx.roundRect(w-70,y-14,65,28,4); flowCtx.fill(); flowCtx.stroke(); 
                 flowCtx.fillStyle='#e4e4e7'; flowCtx.font='bold 12px monospace'; flowCtx.textAlign='center'; flowCtx.fillText(s.toUpperCase(),w-37,y+5); 
