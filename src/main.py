@@ -477,7 +477,10 @@ async def admin_oauth_callback(request: Request, sub: str, code: str):
     if oauth_manager is None or tracker is None:
         return JSONResponse({"error": "Not initialized"}, status_code=503)
 
+    logger = logging.getLogger(__name__)
+    logger.info(f"OAuth callback for '{sub}', code length: {len(code)}, code preview: {code[:20]}...")
     result = await oauth_manager.exchange_code(sub, code)
+    logger.info(f"OAuth exchange result for '{sub}': {result}")
 
     if result["success"]:
         # Clear auth_failed if it was set
@@ -603,12 +606,14 @@ async def admin_add_subscription(request: Request):
     if config and any(s.name == name for s in config.subscriptions):
         raise HTTPException(status_code=409, detail=f"Subscription '{name}' already exists")
 
+    # If using placeholder key, auto-disable until authorized via Auth tab
+    is_placeholder = "placeholder" in api_key
     new_sub = {
         "name": name,
         "api_key": api_key,
         "max_concurrent": int(body.get("max_concurrent", 5)),
         "priority": int(body.get("priority", 1)),
-        "enabled": bool(body.get("enabled", True)),
+        "enabled": False if is_placeholder else bool(body.get("enabled", True)),
     }
 
     try:
